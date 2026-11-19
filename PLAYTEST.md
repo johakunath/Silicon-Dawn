@@ -47,6 +47,6 @@ Method: each milestone has three checks. (1) A real-input run in headless Edge (
 
 - **Slow:** in Era 1, the stretch between first chain and stockpile goal is a waiting game at 1×. 2× and 4× speed help, and the next objective hint points at "scale up". A later pass could add a mid-goal such as "build a second smelter".
 - **Too easy?** Events are survivable even unprepared on Standard. Race difficulty is where they bite. Needs human tuning.
-- **Confusing:** the pod mode (Training/Inference) is only explained in its tooltip and inspector. Consider a one-time hint when the first pod is placed.
+- ~~Pod mode only explained in the tooltip~~. Fixed: one-time first-build tips now cover pods, racks, fabs, halls, depots, gas, switches and the engine.
 - The autoplayer finishes the campaign seed in about 60 sim-minutes, but on seed 777 it stalls in Era 4 because its own rare-earth and power placement fails. This is a bot weakness, not a game deadlock (the player can always place a Depot, pole or substation), but it should be improved for sandbox seeds.
 - Balance needs real humans. The timings are derived from the bot, and humans are assumed to be about 2× slower, which gives roughly 2–2.5 h for the campaign.
