@@ -14,6 +14,7 @@ import type { EraScore } from '../sim/state';
 import { DAY_LENGTH, hq, sunlight, timeOfDay } from '../sim/state';
 import type { Building, BuildingCategory, Cost, ItemId } from '../sim/types';
 import { BIOME, idx } from '../sim/world';
+import { coveredAt } from '../sim/power';
 import { tileHeight } from '../render/terrain';
 import { itemIcon, renderThumbnails, thumb } from './icons';
 import { badgeFor, explain } from './status';
@@ -39,7 +40,6 @@ export class Hud {
   private lastStock: Partial<Record<ItemId, number>> = {};
   private rate: Partial<Record<ItemId, number>> = {};
   private seenFeed = 0;
-  private badgePool: HTMLElement[] = [];
   private mapBase: ImageData | null = null;
   private mapCtx!: CanvasRenderingContext2D;
   private newSeen = new Set<string>();
@@ -62,12 +62,12 @@ export class Hud {
     const r = this.root;
     r.innerHTML = '';
     const add = (id: string, el: HTMLElement) => { el.id = id; r.appendChild(el); this.els[id] = el; return el; };
-    add('badges', h('div'));
+    add('badges', h('canvas'));
     add('floats', h('div'));
     add('redvig', h('div', 'vignette-red'));
     // top bar
     const top = add('topbar', h('div', 'panel'));
-    top.innerHTML = `<div id="logo">SILICON DAWN</div><div id="erachip"></div><div id="res"></div>
+    top.innerHTML = `<div id="logo">SILICON<br>DAWN</div><div id="erachip"></div><div id="res"></div>
       <div class="gauge" id="pgauge"><div class="top"><span>${itemIcon('power', 16)} POWER</span><span id="pval"></span></div><div class="bar"><i id="pbar"></i><b id="pdem"></b></div><div class="top" style="font-size:13px;color:#93a4c4"><span id="pbat"></span><span id="ppue"></span></div></div>
       <div class="gauge" id="cgauge"><div class="top"><span style="color:#6fe9ff">◈ COMPUTE</span><span id="cval"></span></div><div class="bar"><i id="cbar" style="background:#6fe9ff"></i></div><div class="top" style="font-size:13px;color:#93a4c4"><span id="cuse"></span><span id="crp"></span></div></div>
       <div id="clock"></div><div id="speed"></div>
@@ -353,29 +353,45 @@ export class Hud {
       : `<div class="n">${d.icon} ${d.name.toUpperCase()}</div><div class="d">${d.desc}</div><div class="pb"><i style="width:${(e.t / e.dur) * 100}%"></i></div>`;
   }
 
+  /** status badges drawn on one 2D canvas (hundreds of DOM nodes with filters were the #1 frame cost) */
   private updateBadges() {
     const g = this.g, s = g.s;
-    let n = 0;
+    const cv = this.els.badges as HTMLCanvasElement;
     const W = window.innerWidth, H = window.innerHeight;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px'; }
+    const ctx = cv.getContext('2d')!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = '700 17px Rajdhani, sans-serif';
     const v = new THREE.Vector3();
+    const pulse = Math.sin(g.realTime * 6) * 3;
+    let n = 0;
     for (const b of s.buildings) {
       const kind = badgeFor(b);
       if (!kind) continue;
       const d = BUILDING[b.type];
       v.set(b.x + d.size / 2, tileHeight(s.world, b.x, b.y) + g.view.buildings.modelHeight(b.type) + 0.3, b.y + d.size / 2);
       const p = g.rig.worldToScreen(v);
-      if (p.x < -40 || p.y < -40 || p.x > W + 40 || p.y > H + 40) continue;
-      let el = this.badgePool[n];
-      if (!el) { el = h('div', 'badge'); this.els.badges.appendChild(el); this.badgePool.push(el); }
-      el.style.display = 'grid';
-      el.style.left = p.x + 'px'; el.style.top = p.y + 'px';
-      const info = explain(s, b);
-      el.className = 'badge ' + kind + (b.status === 'broken' ? ' pulse' : '');
-      el.textContent = info.glyph;
-      n++;
-      if (n > 300) break;
+      if (p.x < -30 || p.y < -30 || p.x > W + 30 || p.y > H + 30) continue;
+      const x = p.x, y = p.y - 16 + (b.status === 'broken' ? pulse : 0);
+      ctx.beginPath();
+      if (kind === 'bad') {
+        for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; ctx.lineTo(x + Math.cos(a) * 15, y + Math.sin(a) * 15); }
+        ctx.closePath();
+        ctx.fillStyle = '#ff5a5a';
+      } else {
+        ctx.moveTo(x, y - 15); ctx.lineTo(x + 15, y + 12); ctx.lineTo(x - 15, y + 12); ctx.closePath();
+        ctx.fillStyle = '#ffb347';
+      }
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.65)';
+      ctx.stroke(); ctx.fill();
+      ctx.fillStyle = kind === 'bad' ? '#ffffff' : '#05070d';
+      ctx.fillText(explain(s, b).glyph, x, kind === 'bad' ? y + 1 : y + 3);
+      if (++n > 400) break;
     }
-    for (let i = n; i < this.badgePool.length; i++) this.badgePool[i].style.display = 'none';
   }
 
   // ───────── inspector ─────────
@@ -456,6 +472,7 @@ export class Hud {
     if (d.gen === 'wind') extra = `<br>Local wind <b>×${s.world.wind[idx(s.world, tx, ty)].toFixed(2)}</b>`;
     const biome = s.world.biome[idx(s.world, Math.max(0, tx), Math.max(0, ty))];
     if (d.it && biome === BIOME.TUNDRA) extra += '<br>Cold climate: free-air cooling helps';
+    if (c.ok && d.power < 0 && !d.node && !coveredAt(s, tx, ty, d.size)) extra += `<br><span class="bad">⚡ No grid here. Add a Power Pole within 4.5 tiles</span>`;
     this.tipAt(x, y, `<b>${d.name}</b><br>${c.ok ? '<span class="good">✓ Valid placement</span>' : `<span class="bad">✕ ${c.reason}</span>`}${extra}<br>${costHtml(s, c.cost)}`);
   }
   linkTip(x: number, y: number, from: number, b: Building | null) {

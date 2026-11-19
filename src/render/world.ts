@@ -9,6 +9,7 @@ import { BuildingLayer } from './buildings';
 import { LinkLayer } from './links';
 import { getModel } from './models';
 import { Particles } from './particles';
+import { FinaleFX } from './finale';
 import { SceneRig } from './scene';
 import { buildProps, buildTerrain, buildWater, PropLayer, tileHeight } from './terrain';
 
@@ -43,11 +44,14 @@ export class WorldView {
   private frontierFrom = 0;
   private frontierTo = 0;
   shake = 0;
+  finale = new FinaleFX();
+  finaleT = 0;
+  syncLevel = 0;
 
   constructor(public rig: SceneRig, private s: GameState) {
     this.buildings = new BuildingLayer(s);
     this.links = new LinkLayer(s);
-    this.rig.scene.add(this.buildings.group, this.links.group, this.particles.points, this.foot, this.selRing, this.hoverRing, this.rangeRing);
+    this.rig.scene.add(this.finale.group, this.buildings.group, this.links.group, this.particles.points, this.foot, this.selRing, this.hoverRing, this.rangeRing);
     this.foot.visible = false; this.selRing.visible = false; this.hoverRing.visible = false; this.rangeRing.visible = false;
     this.foot.renderOrder = 3; this.selRing.renderOrder = 4; this.hoverRing.renderOrder = 4; this.rangeRing.renderOrder = 4;
     this.buildWorld();
@@ -318,8 +322,13 @@ export class WorldView {
       const ore = m === this.props.depositGlow[1];
       mm.emissiveIntensity = (ore ? 0.05 : 0.2) + rig.night * (ore ? 0.12 : 0.55);
     }
-    this.buildings.update(now, dt, rig.glowLevel);
-    this.links.update(now, dt, rig.glowLevel, rig.night);
+    const eng = s.buildings.find((b) => b.type === 'engine');
+    if (eng) this.finale.place(eng.x + 2, tileHeight(s.world, eng.x, eng.y) + 6.5, eng.y + 2);
+    this.finale.update(now, dt, eng ? this.finaleT : 0, eng ? s.engine.progress : 0);
+    if (eng && this.finaleT > 0 && Math.random() < dt * 30) this.particles.emit('burst', eng.x + 2, tileHeight(s.world, eng.x, eng.y) + 6.5, eng.y + 2, 3, 0.6);
+    this.buildings.update(now, dt, rig.glowLevel, rig.night, this.finale.wave);
+    this.syncLevel += ((s.stats.trainRate > 40 ? Math.min(1, s.stats.trainRate / 200) : 0) - this.syncLevel) * Math.min(1, dt * 2);
+    this.links.update(now, dt, rig.glowLevel, rig.night, this.syncLevel);
     // selection/hover rings
     this.ring(this.selRing, this.selected && s.byId.has(this.selected.id) ? this.selected : null);
     this.ring(this.hoverRing, this.hovered && this.hovered !== this.selected && !this.placingType ? this.hovered : null, 0.2);

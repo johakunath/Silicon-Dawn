@@ -27,7 +27,7 @@ await page.evaluate(async () => {
       const sim: any = await import(/* @vite-ignore */ '/src/sim/sim.ts' as string);
       const g = w.__sd;
       const ap = new m.AutoPlayer(g.s);
-      for (let i = 0; i < seconds * 10; i++) { if (i % 20 === 0) ap.think(); sim.step(g.s); if (g.s.era > targetEra) break; }
+      for (let i = 0; i < seconds * 10; i++) { if (i % 20 === 0) ap.think(); sim.step(g.s); if (g.s.era > targetEra || g.s.flags.campaignDone) break; }
       g.s.signals.length = 0;
       g.s.feed.length = 0;
     },
@@ -48,14 +48,81 @@ const setView = (o: { x?: number; z?: number; view?: number; tod?: number; overl
   g.paused = true;
 }, o);
 
-if (scenario === 'title') {
+if (scenario === 'stress') {
+  // sandbox with 600+ buildings and active flow; then measure real frame times
+  await page.evaluate(async () => {
+    const g = (window as any).__sd;
+    g.hud.closeModals(); (document.querySelector('#title') as HTMLElement).classList.remove('show'); (g.hud as any).openModal = null;
+    g.newGame(20261119, 'standard', 'sandbox');
+    const A: any = await import(/* @vite-ignore */ '/src/sim/actions.ts' as string);
+    const sim: any = await import(/* @vite-ignore */ '/src/sim/sim.ts' as string);
+    const s = g.s;
+    s.stock = { metal: 1e7, silicon: 1e7, chips: 1e7, accel: 1e6 };
+    const h = s.buildings[0];
+    const cx = h.x + 1, cy = h.y + 1;
+    const mix = ['solar', 'pole', 'rack', 'rack', 'cooler', 'pump', 'quarry', 'drill', 'furnace', 'smelter', 'battery', 'hall', 'pod', 'wind', 'lab', 'gas', 'chiller', 'substation', 'switch', 'fab', 'depot', 'gateway'];
+    let k = 0;
+    for (let r = 2; r < 60 && s.buildings.length < 650; r++) {
+      for (let a = 0; a < r * 6; a++) {
+        const ang = (a / (r * 6)) * Math.PI * 2;
+        const x = Math.round(cx + Math.cos(ang) * r), y = Math.round(cy + Math.sin(ang) * r);
+        const type = mix[k++ % mix.length];
+        if (A.checkPlace(s, type, x, y).ok) A.place(s, type, x, y);
+      }
+    }
+    for (let i = 0; i < 300; i++) sim.step(s);
+    s.signals.length = 0; s.feed.length = 0;
+  });
+  await setView({ view: 40, tod: 0.95 });
+  await page.evaluate(() => { const g = (window as any).__sd; g.paused = false; g.speed = 1; });
+  await page.evaluate(() => (window as any).__h.frames(30));
+  await shot('stress_night');
+  out.bench = await page.evaluate(async () => {
+    const g = (window as any).__sd;
+    g.paused = false; g.speed = 1; g.settings.showFps = true; g.applySettings();
+    const t: number[] = [];
+    const cpu: number[] = [];
+    await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); cpu.push(g.frameMs); last = now; if (++n < 300) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+    t.sort((a, b) => a - b);
+    return { buildings: g.s.buildings.length, links: g.s.links.length, medianMs: t[150].toFixed(2), p95Ms: t[285].toFixed(2), fpsMedian: (1000 / t[150]).toFixed(0), cpuMs: g.frameMs.toFixed(2) };
+  });
+  if (process.env.PERFBISECT) {
+    const measure = () => page.evaluate(async () => { const t: number[] = []; await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); last = now; if (++n < 120) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); }); t.sort((a, b) => a - b); return t[60].toFixed(1); });
+    const v: Record<string, string> = { base: await measure() };
+    await page.evaluate(() => { (document.querySelector('#badges') as HTMLElement).style.display = 'none'; });
+    v.noBadges = await measure();
+    await page.evaluate(() => { (document.querySelector('#ui') as HTMLElement).style.display = 'none'; });
+    v.noUi = await measure();
+    await page.evaluate(() => { const g = (window as any).__sd; g.rig.renderer.shadowMap.enabled = false; g.rig.sun.castShadow = false; g.rig.scene.traverse((o: any) => { if (o.material) o.material.needsUpdate = true; }); });
+    v.noShadow = await measure();
+    await page.evaluate(() => { const g = (window as any).__sd; g.rig.bloom.enabled = false; });
+    v.noShadowNoBloom = await measure();
+    await page.evaluate(() => { const g = (window as any).__sd; g.view.particles.points.visible = false; });
+    v.noParticles = await measure();
+    await page.evaluate(() => { const g = (window as any).__sd; g.view.water.mesh.visible = false; });
+    v.noWater = await measure();
+    await page.evaluate(() => { const g = (window as any).__sd; g.view.props.group.visible = false; });
+    v.noProps = await measure();
+    out.perf = v;
+  }
+  await setView({ view: 18, tod: 0.5 });
+  await page.evaluate(() => (window as any).__h.frames(30));
+  await shot('stress_day_close');
+} else if (scenario === 'title') {
   await page.evaluate(() => (window as any).__h.frames(30));
   await shot('title');
 } else {
   await start();
-  const plan: Record<string, [number, number]> = { era1: [1, 200], era2: [2, 900], era3: [3, 2400], era4: [4, 5400], era5: [5, 9000] };
-  const [era, secs] = plan[scenario] ?? [1, 200];
-  await page.evaluate(([e, s]) => (window as any).__h.run(e, s), [era, secs]);
+  const cache = `.cache/${scenario}.json`;
+  if (fs.existsSync(cache)) {
+    const json = fs.readFileSync(cache, 'utf8');
+    await page.evaluate((j) => { const g = (window as any).__sd; g.loadJson(j); g.s.feed.length = 0; g.s.signals.length = 0; document.querySelectorAll('.toast').forEach((t) => t.remove()); }, json);
+    if (process.env.DBG) await page.evaluate((code) => eval(code), process.env.DBG);
+  } else {
+    const plan: Record<string, [number, number]> = { era1: [1, 200], era2: [2, 900], era3: [3, 2400], era4: [4, 5400], era5: [5, 9000] };
+    const [era, secs] = plan[scenario] ?? [1, 200];
+    await page.evaluate(([e, s]) => (window as any).__h.run(e, s), [era, secs]);
+  }
   await page.evaluate(() => { const g = (window as any).__sd; g.view.frontierAnim = 1; g.hud.closeModals(); g.focusCore(true); });
   await setView({ view: 12, tod: 0.45 });
   await page.evaluate(() => (window as any).__h.frames(90));
@@ -71,6 +138,17 @@ if (scenario === 'title') {
     await page.evaluate(() => (window as any).__h.frames(30));
     await shot(`${scenario}_ov_${ov}`);
     await page.evaluate((ov) => (window as any).__sd.setOverlay(ov), ov);
+  }
+  if (scenario === 'era5') {
+    // finale: focus the engine, ignite, night
+    await page.evaluate(() => { const g = (window as any).__sd; const e = g.s.buildings.find((b: any) => b.type === 'engine'); if (e) { g.rig.target.x = e.x + 2; g.rig.target.z = e.y + 2; } g.finale = 0.12; });
+    await setView({ view: 20, tod: 0.95 });
+    await page.evaluate(() => (window as any).__h.frames(60));
+    await shot('era5_finale_wave');
+    await page.evaluate(() => { (window as any).__sd.finale = 0.6; });
+    await setView({ view: 30, tod: 0.97 });
+    await page.evaluate(() => (window as any).__h.frames(60));
+    await shot('era5_finale_aurora');
   }
   // benchmark: real frame timing over 3s of rendering
   out.bench = await page.evaluate(async () => {

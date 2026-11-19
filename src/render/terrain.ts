@@ -165,7 +165,7 @@ export function buildWater(w: World): { mesh: THREE.Mesh; uniforms: Record<strin
         vec3 V = normalize(vec3(1.0, 1.15, 1.0));
         vec3 H = normalize(uSunDir + V);
         float spec = pow(max(dot(n,H),0.0), 90.0) * 1.6;
-        float fres = pow(1.0 - max(dot(n,V),0.0), 3.0);
+        float fres = pow(clamp(1.0 - dot(n,V), 0.0, 1.0), 3.0);
         vec3 col = base * (0.55 + 0.45*max(dot(n,uSunDir),0.0)) + uSunCol*spec + vec3(0.25,0.35,0.45)*fres*0.4;
         // shoreline foam bands
         float band = sin(shore*22.0 - uTime*1.6 + h(p*0.5)*1.2);

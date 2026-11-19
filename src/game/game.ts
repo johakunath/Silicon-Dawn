@@ -14,6 +14,18 @@ import { Overlay, WorldView } from '../render/world';
 import { Hud } from '../ui/hud';
 import { badgeFor } from '../ui/status';
 
+const FIRST_TIPS: Record<string, string> = {
+  quarry: 'Tip: extractors need a refinery. Place a Silicon Furnace nearby, and belts connect automatically.',
+  rack: 'Tip: racks turn power into compute and heat. Link them to a Lab, and pipe in coolant to stop throttling.',
+  fab: 'Tip: fabs need silicon, metal and water. You can also link the Core or a Depot → Fab to ship stockpiled goods.',
+  hall: 'Tip: a Datacenter Hall needs 1.5 coolant/s. Chillers need no water, and cooling towers are kinder to PUE.',
+  pod: 'Tip: select a pod and press M to tune it. Training mode gives +25% compute, Inference mode suits Gateways.',
+  depot: 'Tip: Depots work both ways. Belts deliver into them, and links out of them ship stockpiled goods anywhere nearby.',
+  gas: 'Tip: gas is firm power, but it hurts your footprint rating and trips during grid faults.',
+  switch: 'Tip: route compute → Switch → Training Core over fiber. Fiber-fed training is twice as efficient.',
+  engine: 'The Dawn Engine is fiction. Feed it compute over fiber and accelerators from a Depot.',
+};
+
 export type Tool = { kind: 'select' } | { kind: 'build'; type: string } | { kind: 'link'; from: number | null } | { kind: 'demolish' };
 
 export interface Settings { volume: number; music: number; muted: boolean; reducedMotion: boolean; edgePan: boolean; showFps: boolean; uiScale: number }
@@ -43,7 +55,7 @@ export class Game {
   private mouse = { x: 0, y: 0, down: false, button: -1, dragX: 0, dragY: 0, moved: false, lastPaint: '' };
   private vel = new THREE.Vector2();
   private yawTarget = Math.PI / 4;
-  private viewTarget = 16;
+  private viewTarget = 13;
   private autosaveT = 0;
   private flash = 0;
   private problemIdx = 0;
@@ -52,6 +64,8 @@ export class Game {
   frameMs = 0;
   private cinematic: { t: number; dur: number; from: number; to: number } | null = null;
   finale = 0; // 0..1 after ignition
+  private nightSeen = false;
+  private tipsSeen = new Set<string>();
 
   constructor(canvas: HTMLCanvasElement, ui: HTMLElement) {
     this.s = createState(20261119);
@@ -434,6 +448,17 @@ export class Game {
     const tod = this.started ? timeOfDay(s) : 0.42 + this.realTime * 0.002;
     this.rig.setTimeOfDay(tod, s.era, s.era >= 5 ? 1 : 0);
     if (this.finale > 0) this.finale = Math.min(1, this.finale + rdt / 20);
+    this.view.finaleT = this.finale;
+    // era V aurora: faint every night, blazing after ignition
+    this.rig.aurora = s.era >= 5 ? Math.max(this.rig.night * 0.5, this.finale > 0 ? 0.6 + this.finale * 0.6 : 0) : 0;
+    // event colour grading
+    const ev = s.events.find((e) => e.warn <= 0)?.id;
+    const target = ev === 'heatwave' ? [1.16, 0.95, 0.78, 0.55] : ev === 'dust' ? [1.1, 0.92, 0.7, 0.5] : ev === 'drought' ? [1.05, 1.0, 0.85, 0.35] : ev === 'outage' ? [0.85, 0.85, 1.0, Math.random() < 0.04 ? 0.9 : 0.3] : ev === 'shortage' ? [0.95, 1.02, 0.95, 0.2] : [1, 1, 1, 0];
+    const e4 = this.rig.event;
+    e4.set(e4.x + (target[0] - e4.x) * rdt * 2, e4.y + (target[1] - e4.y) * rdt * 2, e4.z + (target[2] - e4.z) * rdt * 2, ev === 'outage' ? target[3] : e4.w + (target[3] - e4.w) * rdt * 2);
+    if (ev === 'dust' && Math.random() < rdt * 25) { const t = this.rig.target; this.view.particles.emit('dust', t.x + (Math.random() - 0.5) * this.rig.view * 3, 1.5 + Math.random() * 2, t.z + (Math.random() - 0.5) * this.rig.view * 3, 2, 3); }
+    // first nightfall teaching moment
+    if (this.started && this.rig.night > 0.6 && !this.nightSeen && s.era === 1 && s.time > 30) { this.nightSeen = true; this.hud.toast('☾ Night falls. Solar sleeps, and your batteries carry the grid until dawn.', 'warn'); }
     this.view.update(this.realTime, rdt);
     if (this.flash > 0) this.flash = Math.max(0, this.flash - rdt * 0.6);
     this.rig.render(this.realTime, this.flash);
@@ -474,7 +499,10 @@ export class Game {
     for (const sg of s.signals) {
       this.view.handleSignal(sg.kind, sg.x, sg.y, sg.data);
       switch (sg.kind) {
-        case 'build': { const d = BUILDING[sg.data as string]; audio.play(d.size >= 3 ? 'placeBig' : 'place', ['power', 'extract', 'refine', 'compute', 'cooling', 'workload', 'logistics', 'special', 'core'].indexOf(d.cat)); this.hud.refreshPalette(); break; }
+        case 'build': {
+          const tip = FIRST_TIPS[sg.data as string];
+          if (tip && !this.tipsSeen.has(sg.data as string) && this.started) { this.tipsSeen.add(sg.data as string); this.hud.toast(tip, 'info'); }
+          const d = BUILDING[sg.data as string]; audio.play(d.size >= 3 ? 'placeBig' : 'place', ['power', 'extract', 'refine', 'compute', 'cooling', 'workload', 'logistics', 'special', 'core'].indexOf(d.cat)); this.hud.refreshPalette(); break; }
         case 'link': audio.play('link'); break;
         case 'unlink': audio.play('unlink'); break;
         case 'demolish': audio.play('demolish'); this.hud.refreshPalette(); break;

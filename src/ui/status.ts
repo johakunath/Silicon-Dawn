@@ -36,7 +36,7 @@ export function explain(s: GameState, b: Building): StatusInfo {
 export function badgeFor(b: Building): 'bad' | 'warn' | null {
   switch (b.status) {
     case 'broken': case 'no_power': return 'bad';
-    case 'low_power': return b.powerSat < 0.5 ? 'bad' : 'warn';
+    case 'low_power': return b.powerSat < 0.5 ? 'bad' : null; // mild brownouts are shown grid-wide in the top bar
     case 'no_input': case 'output_full': case 'no_output_link': case 'overheat': return 'warn';
     default: return null;
   }

@@ -12,6 +12,7 @@ interface TypeSlot {
   ids: number[];
 }
 
+const AX = new THREE.Vector3(1, 0, 0), AY = new THREE.Vector3(0, 1, 0), AZ = new THREE.Vector3(0, 0, 1);
 const MAX_PER_TYPE: Record<string, number> = { solar: 600, pole: 600, rack: 800, wind: 400, battery: 300, pod: 400 };
 
 export class BuildingLayer {
@@ -28,6 +29,7 @@ export class BuildingLayer {
   private tmpS = new THREE.Vector3();
   private tmpC = new THREE.Color();
   private known = new Set<number>();
+  private syncSig = -1;
   /** body tint callback (overlays/selection) */
   tint: ((b: Building) => THREE.Color | null) | null = null;
   reducedMotion = false;
@@ -130,16 +132,19 @@ export class BuildingLayer {
   }
 
   /** sync with sim state & animate. now = seconds (real time) */
-  update(now: number, dt: number, glowLevel: number) {
+  update(now: number, dt: number, glowLevel: number, night = 0, wave: { x: number; z: number; r: number } | null = null) {
     const s = this.s;
     // sync add/remove
-    const live = new Set<number>();
-    for (const b of s.buildings) {
-      live.add(b.id);
-      if (!this.slot.has(b.id)) this.add(b, now, this.known.size > 0);
+    if (s.buildings.length !== this.slot.size || this.syncSig !== s.nextId) {
+      const live = new Set<number>();
+      for (const b of s.buildings) {
+        live.add(b.id);
+        if (!this.slot.has(b.id)) this.add(b, now, this.known.size > 0);
+      }
+      for (const id of [...this.slot.keys()]) if (!live.has(id)) this.remove(id);
+      this.known = live;
+      this.syncSig = s.nextId;
     }
-    for (const id of [...this.slot.keys()]) if (!live.has(id)) this.remove(id);
-    this.known = live;
     this.glowMat.color.setScalar(glowLevel);
 
     const pulse = 0.5 + 0.5 * Math.sin(now * 6);
@@ -172,6 +177,17 @@ export class BuildingLayer {
           }
           if (b.type === 'battery' || b.type === 'gridbat') lvl = 0.25 + 0.75 * Math.min(1, b.charge / ((d.battery?.capacity ?? 1) * s.fx.batteryMul));
           if (b.type === 'engine') lvl = 0.6 + 1.6 * s.engine.progress + (s.engine.ignited ? 2 : 0);
+          // dusk: lights switch on in a staggered wave across the base (with a short flicker)
+          const th = 0.22 + ((b.id * 0.61803) % 1) * 0.42;
+          const on = Math.min(1, Math.max(0, (night - th) / 0.06));
+          let lights = 0.62 + 0.55 * on;
+          if (on > 0 && on < 1 && !this.reducedMotion) lights *= Math.sin(now * 37 + b.id) > 0 ? 1 : 0.55;
+          lvl *= lights;
+          if (wave && wave.r > 0) {
+            const dd = Math.hypot(b.x + d.size / 2 - wave.x, b.y + d.size / 2 - wave.z);
+            const band = Math.max(0, 1 - Math.abs(dd - wave.r) / 5);
+            if (band > 0) { lvl += band * 4; r += band * 0.3; }
+          }
           this.tmpC.setRGB(r * lvl, g * lvl, bl * lvl);
           t.glow.setColorAt(i, this.tmpC);
         }
@@ -188,7 +204,7 @@ export class BuildingLayer {
           const h = tileHeight(s.world, b.x, b.y);
           const sc = b0 !== undefined ? Math.min(1, (now - b0) / 0.5) : 1;
           this.tmpV.set(b.x + d.size / 2 + m.spin.pivot.x, h + m.spin.pivot.y * sc, b.y + d.size / 2 + m.spin.pivot.z);
-          const axis = m.spin.axis === 'x' ? new THREE.Vector3(1, 0, 0) : m.spin.axis === 'y' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+          const axis = m.spin.axis === 'x' ? AX : m.spin.axis === 'y' ? AY : AZ;
           this.tmpQ.setFromAxisAngle(axis, a);
           this.tmpS.setScalar(Math.max(0.02, sc));
           this.tmpM.compose(this.tmpV, this.tmpQ, this.tmpS);

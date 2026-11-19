@@ -22,10 +22,14 @@ const GradeShader = {
     uVig: { value: 0.35 },
     uTime: { value: 0 },
     uFlash: { value: 0 },
+    uAurora: { value: 0 },
+    uT: { value: 0 },
+    uEvent: { value: new THREE.Vector4(0, 0, 0, 0) },
   },
   vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);} `,
   fragmentShader: `
     uniform sampler2D tDiffuse; uniform vec3 uTint; uniform float uSat; uniform float uVig; uniform float uTime; uniform float uFlash;
+    uniform float uAurora; uniform float uT; uniform vec4 uEvent;
     varying vec2 vUv;
     float rnd(vec2 c){ return fract(sin(dot(c, vec2(12.9898,78.233))+uTime)*43758.5453); }
     void main(){
@@ -33,6 +37,17 @@ const GradeShader = {
       vec3 col = c.rgb * uTint;
       float l = dot(col, vec3(0.299,0.587,0.114));
       col = mix(vec3(l), col, uSat);
+      // aurora curtains across the top of the screen (era V nights + finale)
+      if (uAurora > 0.001) {
+        float x = vUv.x;
+        float band = 0.5 + 0.5 * sin(x * 7.0 + uT * 0.35 + sin(x * 17.0 + uT * 0.9) * 0.9);
+        float band2 = 0.5 + 0.5 * sin(x * 11.0 - uT * 0.25 + 1.7);
+        float top = smoothstep(0.45, 1.0, vUv.y);
+        float curtain = top * band * (0.6 + 0.4 * sin(vUv.y * 40.0 + x * 9.0 + uT * 2.0));
+        col += vec3(0.15, 1.0, 0.55) * curtain * uAurora * 0.35 + vec3(0.65, 0.3, 1.0) * top * band2 * band2 * uAurora * 0.25;
+      }
+      // event grading: rgb tint & strength (heatwave warm, dust brown, outage flicker)
+      col = mix(col, col * uEvent.rgb, uEvent.a);
       vec2 d = vUv - 0.5;
       float v = smoothstep(0.85, 0.2, length(d*vec2(1.1,1.0)));
       col *= mix(1.0 - uVig, 1.0, v);
@@ -54,7 +69,7 @@ export class SceneRig {
   hemi = new THREE.HemisphereLight(0xcfe8ff, 0x5a4a3a, 0.9);
   target = new THREE.Vector3(64, 1, 64);
   /** half-height of view in world units (lower = zoomed in) */
-  view = 16;
+  view = 13;
   yaw = Math.PI / 4;
   pitch = 0.62;
   night = 0; // 0 day .. 1 night
@@ -151,8 +166,13 @@ export class SceneRig {
     this.glowLevel = (0.95 + this.night * 0.55) * (0.85 + (g.nightGlow - 1) * 0.5);
   }
 
+  aurora = 0;
+  event = new THREE.Vector4(1, 1, 1, 0);
   render(time: number, flash = 0) {
     this.grade.uniforms.uTime.value = time % 10;
+    this.grade.uniforms.uT.value = time % 1000;
+    this.grade.uniforms.uAurora.value = this.aurora;
+    this.grade.uniforms.uEvent.value.copy(this.event);
     this.grade.uniforms.uFlash.value = flash;
     this.composer.render();
   }
