@@ -77,6 +77,12 @@ export interface Building {
   /** received compute this tick (workload sinks) */
   rx: number;
   rxFiber: number;
+  /** compute quality tags: inference (Q) and training (T) multipliers carried along links */
+  rxQ: number;
+  rxT: number;
+  outQ: number;
+  outT: number;
+  outF: number;
   /** extra per-type state */
   boost: number; // hub boost multiplier last tick
 }

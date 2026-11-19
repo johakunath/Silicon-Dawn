@@ -39,8 +39,8 @@ export interface LinkDef {
 }
 
 export const LINKS: Record<LinkKind, LinkDef> = {
-  conveyor: { kind: 'conveyor', name: 'Conveyor', capacity: 2, speed: 2.2, maxLength: 14, costPerTile: { metal: 0.5 }, color: '#5a5f6e' },
-  pipe: { kind: 'pipe', name: 'Pipe', capacity: 4, speed: 3.5, maxLength: 16, costPerTile: { metal: 0.4 }, color: '#3c6e9e' },
-  cable: { kind: 'cable', name: 'Data Cable', capacity: 16, speed: 7, maxLength: 14, costPerTile: { metal: 0.25, silicon: 0.25 }, color: '#2b3550' },
-  fiber: { kind: 'fiber', name: 'Fiber', capacity: 80, speed: 16, maxLength: 30, costPerTile: { chips: 0.25 }, color: '#1b2240' },
+  conveyor: { kind: 'conveyor', name: 'Conveyor', capacity: 2, speed: 2.2, maxLength: 14, costPerTile: {}, color: '#5a5f6e' },
+  pipe: { kind: 'pipe', name: 'Pipe', capacity: 4, speed: 3.5, maxLength: 16, costPerTile: {}, color: '#3c6e9e' },
+  cable: { kind: 'cable', name: 'Data Cable', capacity: 16, speed: 7, maxLength: 14, costPerTile: {}, color: '#2b3550' },
+  fiber: { kind: 'fiber', name: 'Fiber', capacity: 80, speed: 16, maxLength: 30, costPerTile: {}, color: '#1b2240' },
 };

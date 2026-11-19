@@ -1,0 +1,12 @@
+import { createState } from '../src/sim/state';
+import { autoplay } from '../src/sim/autoplayer';
+const era = Number(process.argv[2] ?? 2);
+const seed = Number(process.argv[3] ?? 20261119);
+const s = createState(seed, 'standard');
+const t0 = Date.now();
+const r = autoplay(s, era, 3 * 3600);
+console.log(r.log.filter((l) => l.startsWith('==')).join('\n'));
+console.log({ eraReached: r.eraReached, simMinutes: +(r.time / 60).toFixed(1), eraTimes: r.eraTimes, buildings: r.buildings, problems: r.problems, wallMs: Date.now() - t0 });
+console.log('stock', Object.fromEntries(Object.entries(s.stock).map(([k, v]) => [k, Math.round(v!)])), 'rp', Math.round(s.rp), 'techs', s.techs.join(','));
+console.log('done', Object.keys(s.done).join(','));
+console.log('scores', s.eraScores.map((e) => `${e.era}:${e.grade} t${Math.round(e.time / 60)}m eff${e.efficiency.toFixed(2)} rel${e.reliability.toFixed(2)} fp${e.footprint.toFixed(2)}`).join(' | '));

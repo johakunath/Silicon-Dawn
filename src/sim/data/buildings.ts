@@ -1,6 +1,7 @@
 import type { BuildingDef, ItemId } from '../types';
 
-const SOLIDS: ItemId[] = ['quartz', 'ore', 'silicon', 'metal', 'chips', 'rare', 'accel', 'robots'];
+// raw quartz/ore must be refined first, so storage only takes refined goods
+const SOLIDS: ItemId[] = ['silicon', 'metal', 'chips', 'rare', 'accel', 'robots'];
 
 export const BUILDINGS: BuildingDef[] = [
   // ───────── Era 1 · Sand ─────────
