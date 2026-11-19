@@ -45,7 +45,7 @@ export function rebuildGrids(s: GameState) {
   const grids: GridInfo[] = [];
   for (const n of nodes) {
     const r = find(n.id);
-    if (!compIndex.has(r)) { compIndex.set(r, grids.length); grids.push({ id: grids.length, gen: 0, demand: 0, sat: 1, stored: 0, capacity: 0, nodes: [], clean: 1 }); }
+    if (!compIndex.has(r)) { compIndex.set(r, grids.length); grids.push({ id: grids.length, gen: 0, demand: 0, sat: 1, stored: 0, capacity: 0, nodes: [], clean: 1, avail: 0 }); }
     const gi = compIndex.get(r)!;
     n.grid = gi;
     grids[gi].nodes.push(n.id);

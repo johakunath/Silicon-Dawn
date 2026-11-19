@@ -15,6 +15,7 @@ export interface GridInfo {
   capacity: number;
   nodes: number[];
   clean: number; // clean generation share
+  avail: number; // generation available right now (variable + firm)
 }
 
 export interface FeedItem { t: number; text: string; kind: 'info' | 'good' | 'warn' | 'bad' | 'era'; x?: number; y?: number }

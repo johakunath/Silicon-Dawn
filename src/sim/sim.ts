@@ -199,6 +199,9 @@ export function step(s: GameState) {
       supplied = V + firmUsed + discharge;
     }
     g.sat = D > 0 ? Math.min(1, supplied / D) : 1;
+    let batRate = 0;
+    for (const id of g.nodes) { const nb = s.byId.get(id)!; const nd = BUILDING[nb.type]; if (nd.battery && nb.charge > 1) batRate += nd.battery.rate * s.fx.batteryMul; }
+    g.avail = V + firmCap[g.id] + batRate;
     // apply battery flows proportionally
     if (charge > 0 || discharge > 0) {
       for (const id of g.nodes) {
@@ -241,7 +244,7 @@ export function step(s: GameState) {
     if (d.power < 0) {
       let p = -d.power * (0.15 + 0.85 * want[i]) * sat;
       if (isCooling(b.type) && b.type !== 'pump') p *= s.fx.coolingPowerMul;
-      if (d.it) itPower += p; else facPower += p;
+      if (d.it) itPower += p; else if (d.cat === 'cooling' || d.passthrough || d.workload) facPower += p;
     }
     if (d.gen || d.battery || (d.node && !d.inputs && !d.outputs)) {
       if (b.type === 'hq') {
