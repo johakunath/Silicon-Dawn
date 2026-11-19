@@ -1,0 +1,1354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Silicon Dawn — from sand to sentience</title>
+<style>
+:root{
+  --bg:#0a0d18; --panel:rgba(12,16,30,.93); --line:#2b3657; --txt:#dbe3f7; --dim:#96a3c7;
+  --acc:#5ee6a8; --warn:#ff7a6b; --gold:#ffd166; --agi:#b79bff;
+  --mono:ui-monospace,'Cascadia Mono','JetBrains Mono',Consolas,'Courier New',monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--txt);font-family:var(--mono);}
+canvas#game{position:fixed;inset:0;image-rendering:pixelated;touch-action:none;cursor:crosshair;}
+#vignette{position:fixed;inset:0;pointer-events:none;z-index:5;background:radial-gradient(ellipse at center,transparent 55%,rgba(3,5,12,.55) 100%);}
+#scan{position:fixed;inset:0;pointer-events:none;z-index:6;background:repeating-linear-gradient(0deg,rgba(255,255,255,.013) 0 1px,transparent 1px 3px);}
+
+#topbar{position:fixed;top:0;left:0;right:0;z-index:10;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 14px;font-size:14px;background:linear-gradient(180deg,rgba(7,10,20,.96),rgba(7,10,20,.7) 75%,transparent);}
+#logo{font-weight:800;letter-spacing:3px;font-size:16px;color:#eef2ff;margin-right:10px;}
+#logo span{color:var(--acc);}
+.chipgroup{display:flex;align-items:center;gap:7px;padding-right:12px;margin-right:2px;border-right:1px solid var(--line);}
+.chipgroup:last-of-type{border-right:none;}
+.chip{display:flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line);border-radius:5px;background:rgba(14,19,36,.85);color:var(--dim);white-space:nowrap;}
+.chip b{color:var(--txt);font-weight:600;}
+.chip i{width:8px;height:8px;border-radius:2px;display:inline-block;flex:none;}
+.chip.bad b{color:var(--warn);}
+#r_net.pos{color:var(--acc);}
+#r_net.neg{color:var(--warn);}
+.tbtns{margin-left:auto;display:flex;gap:7px;}
+.tbtns button{font-family:var(--mono);font-size:14px;background:rgba(14,19,36,.9);border:1px solid var(--line);color:var(--txt);border-radius:5px;padding:5px 13px;cursor:pointer;}
+.tbtns button:hover{border-color:#41507f;}
+
+#objective{position:fixed;top:66px;right:14px;width:300px;z-index:10;padding:12px 14px;background:var(--panel);border:1px solid var(--line);border-radius:8px;}
+#lv_num{font-size:11px;letter-spacing:2px;color:var(--dim);}
+#lv_name{font-size:18px;font-weight:700;color:var(--gold);margin:3px 0 5px;}
+#lv_goal{font-size:13px;line-height:1.5;margin-bottom:8px;}
+.barrow{display:flex;align-items:center;gap:8px;}
+.barrow .bar{flex:1;}
+#lv_pct{font-size:12px;color:var(--dim);min-width:40px;text-align:right;}
+.bar{height:10px;background:#131a2e;border:1px solid var(--line);border-radius:5px;overflow:hidden;}
+.bar>div{height:100%;width:0;background:linear-gradient(90deg,#2fae7c,var(--acc));transition:width .3s;}
+.bar.agi>div{background:linear-gradient(90deg,#6a4fd0,var(--agi));}
+#agiwrap{margin-top:10px;}
+.agilabel{font-size:11px;letter-spacing:2px;color:var(--agi);margin-bottom:4px;}
+
+#toasts{position:fixed;top:66px;left:300px;z-index:20;display:flex;flex-direction:column;gap:7px;align-items:flex-start;pointer-events:none;}
+.toast{font-size:14px;padding:8px 15px;background:var(--panel);border:1px solid var(--line);border-radius:6px;max-width:44vw;text-align:left;opacity:0;transform:translateY(-8px);transition:all .3s;}
+.toast.show{opacity:1;transform:none;}
+.toast.lv{border-color:var(--gold);color:var(--gold);font-weight:700;letter-spacing:1px;box-shadow:0 0 18px rgba(255,209,102,.22);}
+.toast.un{border-color:var(--acc);color:var(--acc);}
+.toast.warn{border-color:var(--warn);color:var(--warn);}
+.toast.tip{color:var(--dim);font-style:italic;}
+
+#tt{position:fixed;display:none;z-index:30;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:8px 11px;font-size:13px;line-height:1.55;pointer-events:none;}
+#tt .dim{color:var(--dim);font-size:12px;}
+
+#bottom{position:fixed;left:0;right:0;bottom:0;z-index:10;display:flex;flex-direction:row;align-items:stretch;justify-content:center;flex-wrap:wrap;gap:10px;padding:10px 10px 12px;background:linear-gradient(0deg,rgba(7,10,20,.96),rgba(7,10,20,.6) 70%,transparent);}
+#toolinfo{width:300px;flex:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 14px;font-size:13px;color:var(--dim);text-align:left;line-height:1.5;}
+#toolinfo .tn{color:var(--acc);font-size:14px;font-weight:700;}
+#toolinfo .tc{color:var(--gold);font-size:12px;margin:3px 0 4px;}
+#toolinfo .td{font-size:12.5px;}
+#palette{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;max-width:1290px;}
+.pbtn{width:104px;padding:7px 4px 6px;background:rgba(14,19,36,.92);border:1px solid var(--line);border-radius:8px;text-align:center;cursor:pointer;position:relative;user-select:none;}
+.pbtn:hover{border-color:#41507f;}
+.pbtn.sel{border-color:var(--acc);box-shadow:0 0 12px rgba(94,230,168,.35);}
+.pbtn.locked{opacity:.32;cursor:default;}
+.pbtn.poor .pn{color:var(--warn);}
+.pbtn.poor .pcost{color:var(--warn);}
+.pn{font-size:12px;color:var(--txt);margin-top:3px;line-height:1.25;}
+.pcost{font-size:11px;color:var(--gold);margin-top:2px;line-height:1.3;min-height:14px;}
+.pkey{position:absolute;top:3px;left:6px;font-size:11px;color:var(--dim);}
+.plock{position:absolute;top:3px;right:6px;font-size:11px;color:var(--gold);}
+.pbtn.del .px{font-size:26px;height:56px;line-height:56px;color:var(--warn);}
+
+#help{position:fixed;left:14px;bottom:170px;z-index:15;display:none;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 16px;font-size:13px;line-height:1.9;color:var(--dim);}
+#help b{color:var(--txt);}
+
+#overlay,#winov{position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(4,6,13,.72);backdrop-filter:blur(3px);}
+.card{max-width:600px;margin:16px;padding:30px 36px;background:var(--panel);border:1px solid var(--line);border-radius:12px;text-align:center;}
+.card h1{font-size:30px;letter-spacing:6px;color:#eef2ff;margin-bottom:4px;}
+.card h1 em{color:var(--acc);font-style:normal;}
+.card.win h1 em{color:var(--agi);}
+.card .sub{color:var(--dim);font-size:13px;letter-spacing:2px;margin-bottom:18px;}
+.card p{font-size:14px;line-height:1.75;text-align:left;margin-bottom:15px;}
+.card .ctrl{color:var(--dim);font-size:12px;text-align:center;}
+.card button{font-family:var(--mono);font-size:15px;letter-spacing:2px;padding:11px 30px;margin-top:6px;background:transparent;border:1px solid var(--acc);color:var(--acc);border-radius:7px;cursor:pointer;}
+.card button:hover{background:rgba(94,230,168,.12);box-shadow:0 0 16px rgba(94,230,168,.3);}
+#winstats{font-size:14px;color:var(--gold);margin-bottom:10px;}
+
+button:focus-visible,.pbtn:focus-visible,.catbtn:focus-visible{outline:2px solid var(--acc);outline-offset:2px;}
+#ops{position:fixed;left:14px;top:66px;z-index:11;width:272px;padding:11px;background:var(--panel);border:1px solid var(--line);border-radius:8px;font-size:12px;}
+#opshead{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+#opshead b{letter-spacing:1.5px;color:#eef2ff;}
+#opsgrid{display:grid;grid-template-columns:1fr 1fr;gap:5px 10px;color:var(--dim);}
+#opsgrid b{display:block;color:var(--txt);font-size:13px;margin-top:2px;}
+#bottleneck{margin-top:8px;padding:7px 8px;border:1px solid var(--line);border-radius:5px;color:var(--gold);line-height:1.4;}
+#overlayBtns{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;}
+.ovbtn,.catbtn{font-family:var(--mono);font-size:11px;background:#11172a;border:1px solid var(--line);color:var(--dim);border-radius:5px;padding:5px 7px;cursor:pointer;}
+.ovbtn.on,.catbtn.on{border-color:var(--acc);color:var(--acc);background:rgba(94,230,168,.08);}
+#inspector{margin-top:8px;border-top:1px solid var(--line);padding-top:8px;color:var(--dim);line-height:1.5;min-height:34px;}
+#inspector b{color:var(--txt);}
+#lv_lesson{font-size:11.5px;line-height:1.45;color:var(--dim);margin:7px 0 2px;border-top:1px solid var(--line);padding-top:7px;}
+#workload{display:none;margin-top:8px;padding:7px;border-radius:5px;background:rgba(127,231,255,.06);border:1px solid rgba(127,231,255,.25);font-size:11.5px;color:#bfefff;line-height:1.45;}
+#cats{display:flex;gap:5px;align-items:center;justify-content:center;width:100%;}
+#palette{overflow-x:auto;scrollbar-width:thin;padding-bottom:2px;}
+.pbtn{min-width:104px;}
+.pbtn[hidden]{display:none;}
+#minimap{position:fixed;right:14px;bottom:175px;width:128px;height:128px;z-index:8;border:1px solid var(--line);border-radius:8px;background:rgba(7,10,20,.8);image-rendering:pixelated;}
+.modal{position:fixed;inset:0;z-index:45;display:none;align-items:center;justify-content:center;background:rgba(3,5,11,.78);backdrop-filter:blur(4px);padding:16px;}
+.modal.open{display:flex;}
+.modalcard{width:min(760px,96vw);max-height:86vh;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px;box-shadow:0 24px 80px rgba(0,0,0,.45);}
+.modalcard h2{color:var(--acc);letter-spacing:2px;margin-bottom:6px;}
+.modalcard .lede{color:var(--dim);line-height:1.55;margin-bottom:15px;}
+.guidegrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+.guideitem{border:1px solid var(--line);border-radius:7px;padding:11px;background:rgba(18,24,43,.72);line-height:1.55;font-size:12.5px;}
+.guideitem b{display:block;color:var(--gold);font-size:13px;margin-bottom:3px;}
+.modalactions{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+.modalactions button{font-family:var(--mono);background:transparent;border:1px solid var(--acc);color:var(--acc);border-radius:6px;padding:8px 14px;cursor:pointer;}
+#debriefstars{font-size:26px;color:var(--gold);letter-spacing:5px;margin:8px 0;}
+#saveio textarea{width:100%;min-height:150px;background:#090d1a;color:var(--txt);border:1px solid var(--line);border-radius:6px;padding:9px;font-family:var(--mono);font-size:11px;resize:vertical;}
+.statusdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;background:var(--acc);box-shadow:0 0 8px var(--acc);}
+@media(max-width:900px){
+  #topbar{flex-wrap:nowrap;overflow-x:auto;padding:7px 8px;gap:5px;scrollbar-width:none;}
+  #topbar::-webkit-scrollbar{display:none}.chipgroup{flex:none;gap:4px;padding-right:5px}.chip{padding:4px 7px;font-size:12px}#logo{font-size:13px;flex:none}.tbtns{flex:none}
+  #objective{top:58px;right:8px;width:min(285px,73vw);padding:9px 10px}#lv_name{font-size:15px}#lv_goal{font-size:11.5px}.bar{height:8px}#lv_lesson{display:none}
+  #ops{top:auto;bottom:239px;left:8px;width:250px;padding:8px}#opsgrid{display:none}#ops.compact #bottleneck,#ops.compact #overlayBtns,#ops.compact #inspector{display:none}
+  #bottom{display:block;padding:6px 7px 8px;gap:5px}#toolinfo{width:100%;padding:7px 9px;min-height:48px}.td{line-height:1.35}#cats{justify-content:flex-start;overflow-x:auto;margin:5px 0}#palette{justify-content:flex-start;flex-wrap:nowrap;gap:6px}
+  .pbtn{min-width:96px;width:96px;padding:5px 3px}.pn{font-size:11px}.pcost{font-size:10px}
+  #minimap{display:none}.guidegrid{grid-template-columns:1fr}.tbtns button{padding:4px 9px}
+  #toasts{left:8px;top:58px}
+}
+@media(max-width:520px){
+  #logo{display:none}.chipgroup{border-right:none}.tbtns{position:fixed;right:6px;top:7px;background:rgba(7,10,20,.92);z-index:2}.tbtns button:nth-child(n+5){display:none}
+  #objective{top:94px}.toast{max-width:92vw}.card{padding:22px 20px}.card h1{font-size:24px;letter-spacing:4px}
+  #ops{bottom:232px}.modalcard{padding:17px}.guidegrid{display:block}.guideitem{margin-bottom:8px}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important}.toast{transform:none!important}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="vignette"></div>
+<div id="scan"></div>
+
+<div id="topbar">
+  <div id="logo">SILICON<span>DAWN</span></div>
+  <div class="chipgroup">
+    <div class="chip" id="chip_e"><i style="background:#ffe98a"></i>Energy <b id="r_e">0 / 0</b><b id="r_net" class="pos">+0</b></div>
+  </div>
+  <div class="chipgroup">
+    <div class="chip"><i style="background:#e8d38e"></i>Si <b id="r_si">0</b></div>
+    <div class="chip"><i style="background:#9fb2c6"></i>Fe <b id="r_fe">0</b></div>
+    <div class="chip"><i style="background:#c08ff0"></i>RE <b id="r_re">0</b></div>
+    <div class="chip"><i style="background:#5aa7e8"></i>H₂O <b id="r_h2o">0</b></div>
+  </div>
+  <div class="chipgroup">
+    <div class="chip"><i style="background:#5ee6a8"></i>Chips <b id="r_ch">0</b></div>
+    <div class="chip"><i style="background:#7fe7ff"></i>Compute <b id="r_comp">0 free / 0</b></div>
+    <div class="chip"><i style="background:#ff9ecf"></i>Research <b id="r_res">0</b></div>
+    <div class="chip"><i style="background:#ffd166"></i>Robots <b id="r_bot">0</b></div>
+  </div>
+  <div class="tbtns"><button id="btn_pause" aria-label="Pause" title="Pause">⏸</button><button id="btn_speed" aria-label="Game speed" title="Game speed">»1×</button><button id="btn_help" aria-label="Controls" title="Controls">?</button><button id="btn_guide" aria-label="Infrastructure field guide" title="Infrastructure field guide">▤</button><button id="btn_save" aria-label="Save game" title="Save game">↓</button><button id="btn_load" aria-label="Load game" title="Load game">↑</button><button id="btn_sound" aria-label="Toggle sound" title="Toggle sound">♪</button></div>
+</div>
+
+<div id="objective">
+  <div id="lv_num">LEVEL 1 / 10</div>
+  <div id="lv_name"></div>
+  <div id="lv_goal"></div>
+  <div class="barrow"><div class="bar"><div id="lv_bar"></div></div><span id="lv_pct">0%</span></div>
+  <div id="lv_lesson"></div>
+  <div id="workload"></div>
+  <div id="agiwrap" style="display:none">
+    <div class="agilabel">AGI CORE CHARGE</div>
+    <div class="bar agi"><div id="agibar"></div></div>
+  </div>
+</div>
+
+<div id="ops">
+  <div id="opshead"><b><span class="statusdot"></span>OPERATIONS</b><button class="ovbtn" id="ops_toggle" aria-label="Collapse operations panel">−</button></div>
+  <div id="opsgrid">
+    <div>Grid health<b id="m_grid">100%</b></div><div>Compute use<b id="m_util">0%</b></div>
+    <div>Power headroom<b id="m_head">0</b></div><div>Cooling/PUE<b id="m_pue">—</b></div>
+    <div>Battery reserve<b id="m_store">0 / 0</b></div><div>Free compute<b id="m_free">0</b></div>
+  </div>
+  <div id="bottleneck">Build power generation to begin.</div>
+  <div id="overlayBtns"><button class="ovbtn on" data-ov="none">World</button><button class="ovbtn" data-ov="resources">Deposits</button><button class="ovbtn" data-ov="power">Power</button><button class="ovbtn" data-ov="cooling">Cooling</button><button class="ovbtn" data-ov="compute">Compute</button></div>
+  <div id="inspector">Hover a building to inspect its inputs, output, utilization, and modifiers.</div>
+</div>
+
+<div id="toasts"></div>
+<div id="tt"></div>
+
+<div id="bottom">
+  <div id="toolinfo"></div>
+  <div id="cats"></div>
+  <div id="palette"></div>
+</div>
+<canvas id="minimap" width="128" height="128" aria-label="Minimap"></canvas>
+
+<div id="help">
+  <b>Controls</b><br>
+  Drag / WASD — pan · Scroll / pinch — zoom<br>
+  Click — build selected · Right-click — demolish<br>
+  Space — pause · F — 3× speed · Esc — cancel tool · H — this panel<br>
+  <b>Tips</b><br>
+  Select an extractor to highlight valid deposits · Overlays explain power, cooling, compute and materials<br>
+  Solar loves desert · Servers love tundra &amp; cooling · Quartz = Si, grey = Fe, purple = RE
+</div>
+
+<div id="guide" class="modal" role="dialog" aria-modal="true" aria-labelledby="guide_title">
+  <div class="modalcard"><h2 id="guide_title">AI INFRASTRUCTURE FIELD GUIDE</h2><p class="lede">The campaign is fictional, but these relationships mirror real infrastructure. Build, inspect, and use the overlays to see each system in context.</p><div id="guidegrid" class="guidegrid"></div><div class="modalactions"><button data-close="guide">BACK TO GAME</button></div></div>
+</div>
+<div id="debrief" class="modal" role="dialog" aria-modal="true" aria-labelledby="debrief_title">
+  <div class="modalcard"><h2 id="debrief_title">OPERATIONS DEBRIEF</h2><div id="debriefstars"></div><div id="debriefbody" class="lede"></div><div class="modalactions"><button data-close="debrief">CONTINUE</button></div></div>
+</div>
+<div id="saveio" class="modal" role="dialog" aria-modal="true" aria-labelledby="save_title">
+  <div class="modalcard"><h2 id="save_title">SAVE / LOAD</h2><p class="lede">Autosaves are stored locally. This portable code works when browser storage is unavailable.</p><textarea id="save_text" spellcheck="false"></textarea><div class="modalactions"><button id="copy_save">COPY</button><button id="import_save">IMPORT</button><button data-close="saveio">CLOSE</button></div></div>
+</div>
+
+<div id="overlay">
+  <div class="card">
+    <h1>SILICON <em>DAWN</em></h1>
+    <div class="sub">FROM SAND TO SENTIENCE</div>
+    <p>Somewhere between a desert full of quartz and a tundra full of rare earths lies a fictional road from zero AI to AGI. Mine silicon, fabricate chips, stack compute, fund research — and keep the lights on through every night cycle. Ten levels. One awakening.</p>
+    <p class="ctrl">Drag to pan · Scroll/pinch to zoom · Click to build · Right-click to demolish<br>Space pause · F fast-forward · H help</p>
+    <button id="startbtn">BEGIN</button>
+  </div>
+</div>
+
+<div id="winov" style="display:none">
+  <div class="card win">
+    <h1>AGI <em>ACHIEVED</em></h1>
+    <div class="sub">THE AWAKENING</div>
+    <p>The experimental core hums at full charge. You built the physical substrate—but compute alone never settles questions of capability, safety or governance. What happens next remains a human choice.</p>
+    <div id="winstats"></div>
+    <button onclick="location.reload()">RESTART</button>
+  </div>
+</div>
+
+<script src="src/game-core.js"></script>
+<script>
+'use strict';
+const Core=window.SiliconCore;
+/* ================= SILICON DAWN — core ================= */
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const bloomC=document.createElement('canvas'),bctx=bloomC.getContext('2d');
+let W=0,H=0,DPR=1;
+function resize(){
+  const first=W===0;W=innerWidth;H=innerHeight;
+  DPR=Math.min(2,window.devicePixelRatio||1);
+  canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  ctx.imageSmoothingEnabled=false;
+  bloomC.width=Math.max(1,Math.ceil(W/4));bloomC.height=Math.max(1,Math.ceil(H/4));
+  if(first&&W<900){document.getElementById('ops')?.classList.add('compact');const b=document.getElementById('ops_toggle');if(b)b.textContent='+';}
+}
+window.addEventListener('resize',resize);resize();
+
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+const SEED=20260705;
+function makeNoise(seed,scale){
+  const r=mulberry32(seed),gs=32,grid=[];
+  for(let i=0;i<gs*gs;i++)grid.push(r());
+  const v=(x,y)=>grid[((y%gs+gs)%gs)*gs+((x%gs+gs)%gs)];
+  const sm=t=>t*t*(3-2*t);
+  return (x,y)=>{
+    x/=scale;y/=scale;
+    const xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi;
+    const a=v(xi,yi),b=v(xi+1,yi),c=v(xi,yi+1),d=v(xi+1,yi+1),u=sm(xf),w=sm(yf);
+    return a+(b-a)*u+(c-a)*w+(a-b-c+d)*u*w;
+  };
+}
+
+const TW=64,TH=32,PX=2,N=48,CYC=90;
+const TB={GRASS:0,DESERT:1,TUNDRA:2,MESA:3,WATER:4};
+const DEP={NONE:0,SI:1,FE:2,RE:3};
+
+const biomePal={
+  [TB.GRASS]: ['#4c9450','#5aa85e','#417f45','#38703c'],
+  [TB.DESERT]:['#d6b170','#e2c184','#c7a05e','#b18c4e'],
+  [TB.TUNDRA]:['#dde8f1','#eef4fa','#c9d8e6','#b4c6d8'],
+  [TB.MESA]:  ['#9c6a4d','#ab785b','#8a5c42','#754c36'],
+  [TB.WATER]: ['#2b6ea8','#3980ba','#255f92','#1f527f'],
+};
+
+/* ---------- map generation ---------- */
+const map=[];
+{
+  const rng=mulberry32(SEED);
+  const nT=makeNoise(SEED+1,14),nM=makeNoise(SEED+2,11),nW=makeNoise(SEED+3,8),nD=makeNoise(SEED+4,5);
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    const t=nT(x,y)*0.6+(y/N)*0.55;      // low t = cold north
+    const m=nM(x,y),w=nW(x,y);
+    let biome;
+    if(w>0.76)biome=TB.WATER;
+    else if(t<0.42)biome=TB.TUNDRA;
+    else if(m<0.36)biome=TB.DESERT;
+    else if(m>0.64&&t>0.72)biome=TB.MESA;
+    else biome=TB.GRASS;
+    map.push({biome,dep:DEP.NONE,b:null,v:Math.floor(rng()*4)});
+  }
+  // deposits
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    const c=map[y*N+x];if(c.biome===TB.WATER)continue;
+    const d=nD(x+100,y+100);
+    if(c.biome===TB.DESERT&&d>0.70)c.dep=DEP.SI;
+    else if((c.biome===TB.MESA||c.biome===TB.GRASS)&&d<0.26)c.dep=DEP.FE;
+    else if(c.biome===TB.TUNDRA&&d>0.72)c.dep=DEP.RE;
+  }
+  function ensureDeposits(dep,biomes,min){
+    let cnt=map.filter(c=>c.dep===dep).length,guard=0;
+    while(cnt<min&&guard++<8000){
+      const i=Math.floor(rng()*N*N),c=map[i];
+      if(c.biome!==TB.WATER&&biomes.includes(c.biome)&&c.dep===DEP.NONE){c.dep=dep;cnt++;}
+    }
+  }
+  ensureDeposits(DEP.SI,[TB.DESERT,TB.GRASS],14);
+  ensureDeposits(DEP.FE,[TB.GRASS,TB.MESA],14);
+  ensureDeposits(DEP.RE,[TB.TUNDRA],10);
+  // guarantee a lake
+  if(map.filter(c=>c.biome===TB.WATER).length<16){
+    const cx=28,cy=26;
+    for(let y=cy-2;y<=cy+2;y++)for(let x=cx-2;x<=cx+2;x++){
+      if(Math.abs(x-cx)+Math.abs(y-cy)<=3)map[y*N+x]={biome:TB.WATER,dep:DEP.NONE,b:null,v:0};
+    }
+  }
+}
+function cellAt(x,y){return(x>=0&&y>=0&&x<N&&y<N)?map[y*N+x]:null;}
+function nb4(x,y){return[[x+1,y],[x-1,y],[x,y+1],[x,y-1]];}
+
+/* ---------- resource + building definitions ---------- */
+const RES={
+  si:{n:'Silicon',s:'Si'},fe:{n:'Metal',s:'Fe'},re:{n:'Rare Earth',s:'RE'},h2o:{n:'Water',s:'H₂O'},
+  ch:{n:'Chips',s:'Chip'},res:{n:'Research',s:'Res'},bot:{n:'Robots',s:'Bot'}
+};
+const BD={
+  solar:{n:'Solar Array',lvl:1,on:'land',cost:{si:6},h:8,w:52,cols:['#41537a','#2c3a56','#233047'],eUse:0,
+    d:'+4 energy in daylight. +60% in desert. Weak at night.',glow:{c:'#9fd8ff',r:26,i:.16}},
+  sx:{n:'Silicon Extractor',lvl:1,on:'si',cost:{fe:4},h:14,w:50,cols:['#c8b58a','#9a8a66','#877a5c'],eUse:1,
+    d:'-1 energy · +1.2 silicon/s. Build on a silicon deposit (quartz, mostly desert).',glow:{c:'#ffd166',r:26,i:.2}},
+  mx:{n:'Metal Mine',lvl:2,on:'fe',cost:{si:6},h:14,w:50,cols:['#8d99ad','#6c7688','#5c6577'],eUse:1,
+    d:'-1 energy · +1.0 metal/s. Build on a metal deposit (grey ore).',glow:{c:'#ffd166',r:26,i:.2}},
+  fab:{n:'Chip Fab',lvl:3,on:'land',cost:{si:8,fe:12},h:22,w:54,cols:['#b9c2d4','#8b94a8','#79839a'],eUse:3,
+    d:'-3 energy · consumes 1.5 Si + 0.8 Fe /s → 0.5 chips/s.',glow:{c:'#ffb46b',r:38,i:.3}},
+  bat:{n:'Grid Battery',lvl:4,on:'land',cost:{si:10,fe:10,ch:2},h:14,w:50,cols:['#4e665f','#344b45','#293b37'],eUse:0,
+    d:'Stores 60 energy · dispatches up to 12 power during generation shortfalls.',glow:{c:'#8dffb8',r:32,i:.28}},
+  srv:{n:'Server Rack',lvl:4,on:'land',cost:{ch:6,fe:6},h:26,w:46,cols:['#2f3b52','#232c40','#1b2334'],eUse:4,
+    d:'-4 energy · +3 compute/s. ×1.5 next to a Cooling Tower, ×1.25 in tundra.',glow:{c:'#5ee6a8',r:34,i:.3}},
+  pump:{n:'Water Pump',lvl:5,on:'water',cost:{fe:6},h:10,w:46,cols:['#4d7ba8','#3a5f86','#325378'],eUse:1,
+    d:'-1 energy · +1.5 water/s. Build on water.',glow:{c:'#8fd8ff',r:24,i:.2}},
+  cool:{n:'Cooling Tower',lvl:5,on:'land',cost:{fe:8},h:24,w:48,cols:['#c9d4e4','#98a5ba','#8794aa'],eUse:2,
+    d:'-2 energy · -0.8 water/s. Boosts all adjacent servers & data centers ×1.5.',glow:{c:'#8fd8ff',r:28,i:.22}},
+  lab:{n:'Research Lab',lvl:6,on:'land',cost:{ch:8,fe:8},h:16,w:52,cols:['#e7ecf6','#b6bfd2','#a4aec4'],eUse:2,
+    d:'-2 energy · consumes 4 compute/s → 1 research/s.',glow:{c:'#c08ff0',r:38,i:.3}},
+  rx:{n:'Rare Earth Mine',lvl:7,on:'re',cost:{fe:10,ch:4},h:14,w:50,cols:['#7a6a92','#5d5072','#514563'],eUse:2,
+    d:'-2 energy · +0.6 rare earth/s. Build on a rare earth deposit (tundra).',glow:{c:'#c08ff0',r:26,i:.22}},
+  wind:{n:'Wind Turbine',lvl:7,on:'land',cost:{si:8,fe:6},h:36,w:24,cols:['#dfe6f2','#b6bfd2','#a4aec4'],eUse:0,
+    d:'+6 energy, day and night. +30% in tundra and mesa.',glow:{c:'#ff6b6b',r:14,i:.18}},
+  dc:{n:'Data Center',lvl:8,on:'land',cost:{ch:20,fe:25,re:6},h:30,w:58,cols:['#31405e','#243048','#1c2639'],eUse:12,
+    d:'-12 energy · +14 compute/s. Loves cooling and tundra.',glow:{c:'#7fe7ff',r:60,i:.4}},
+  net:{n:'Network Fabric',lvl:8,on:'land',cost:{ch:12,fe:12,re:3},h:18,w:50,cols:['#3d496a','#2c3651','#232b42'],eUse:2,
+    d:'-2 energy · boosts adjacent servers and data centers ×1.2 by reducing communication bottlenecks.',glow:{c:'#9f7bff',r:42,i:.32}},
+  rf:{n:'Robot Factory',lvl:9,on:'land',cost:{ch:15,fe:20},h:20,w:56,cols:['#9aa3b5','#737d92','#636c80'],eUse:5,
+    d:'-5 energy · consumes 1 chip + 1.2 Fe /s → 0.1 robots/s. Each robot: +2% mining speed.',glow:{c:'#ffd166',r:38,i:.3}},
+  fus:{n:'Fusion Plant',lvl:10,on:'land',cost:{fe:40,ch:20,re:20},h:24,w:56,cols:['#5b6b8f','#43506e','#3a4660'],eUse:0,
+    d:'+60 energy, always on. The grid problem, solved.',glow:{c:'#7fe7ff',r:76,i:.5}},
+  agi:{n:'AGI Core',lvl:10,on:'land',cost:{ch:40,re:25,fe:30},h:44,w:34,cols:['#3b3560','#2c2748','#241f3c'],eUse:40,
+    d:'-40 energy · needs 50 free compute/s · burns 3 research/s. Charge it to 100%.',glow:{c:'#9f7bff',r:104,i:.65}},
+};
+
+const CATEGORIES={
+  power:{n:'Power',keys:['solar','bat','wind','fus']},
+  materials:{n:'Materials',keys:['sx','mx','fab','rx']},
+  compute:{n:'Compute',keys:['srv','dc','net','lab','agi']},
+  support:{n:'Cooling + Automation',keys:['pump','cool','rf']},
+};
+const CAT_OF={};for(const[c,v]of Object.entries(CATEGORIES))for(const k of v.keys)CAT_OF[k]=c;
+const GUIDE=[
+  ['Power is the first dependency','AI facilities need steady power, not just high peak generation. Solar falls at night; headroom and firm generation prevent brownouts.'],
+  ['Chips are a supply chain','Silicon and metals become chips. Real accelerators also depend on advanced packaging, memory and globally distributed suppliers.'],
+  ['Compute is capacity, not intelligence','This game uses abstract compute units. Real workloads also depend on memory, communication, time and energy—not one magic number.'],
+  ['Training vs. inference','Training turns data and computation into model parameters. Inference uses a trained model to answer requests. They reward different infrastructure choices.'],
+  ['Cooling and PUE','Electricity becomes heat. Cooling, climate and water limit dense data centers. PUE compares total facility energy with IT equipment energy; lower is better.'],
+  ['Utilization and bottlenecks','Expensive accelerators create value only while doing useful work. Power, chips, networks, cooling, data or demand can each become limiting.'],
+  ['Networks and storage','Large jobs coordinate many accelerators and move datasets and checkpoints. High-bandwidth networks and storage can be as important as arithmetic.'],
+  ['Reliability and redundancy','Production infrastructure needs spare capacity, backup power and fault tolerance. Maximum utilization is efficient—until one failure stops everything.'],
+  ['Automation','Robots improve extraction here. Real facilities automate handling, monitoring, scheduling, failure recovery and workload placement.'],
+  ['The AGI ending is fictional','No known infrastructure threshold guarantees AGI. The finale is narrative; the real lessons are physical constraints and system trade-offs.'],
+];
+
+/* ---------- campaign ---------- */
+const LEVELS=[
+  {n:'First Light',u:['solar','sx'],
+    g:()=>!S.b.some(b=>b.t==='solar')?'Place a Solar Array':!S.b.some(b=>b.t==='sx')?'Select the extractor · build on highlighted quartz':'Stockpile 40 silicon · keep the grid positive',
+    l:'Lesson: generation must cover demand before production can run.',t:'Start with solar. Selecting the extractor reveals every valid quartz tile.',
+    chk:()=>S.b.some(b=>b.t==='solar')&&S.b.some(b=>b.t==='sx')&&S.res.si>=40&&S.eNet>0,
+    prog:()=>{const a=S.b.some(b=>b.t==='solar'),x=S.b.some(b=>b.t==='sx');return!a?0:x?(0.67+Math.min(1,S.res.si/40)*.33):.34;}},
+  {n:'Metal Age',u:['mx'],g:'Stockpile 30 metal',
+    l:'Lesson: different deposits create a spatial supply-chain puzzle.',t:'Machines need bones. The Deposits overlay distinguishes grey ore from quartz.',
+    chk:()=>S.res.fe>=30,prog:()=>Math.min(1,S.res.fe/30)},
+  {n:'The Fab',u:['fab'],g:'Hold 15 chips',
+    l:'Lesson: fabs transform material inputs and power into accelerator supply.',t:'Silicon + metal + power = chips. Inspect the fab whenever utilization drops.',
+    chk:()=>S.res.ch>=15,prog:()=>Math.min(1,S.res.ch/15)},
+  {n:'Compute Rising',u:['srv','bat'],g:'Complete a 90-unit training workload · needs up to 9 compute',
+    l:'Lesson: training is accumulated work; unused compute represents idle capital.',t:'Build racks and keep them powered. The training run consumes available compute.',
+    chk:()=>S.work.training>=90,prog:()=>Math.min(1,S.work.training/90),work:'TRAINING RUN · useful compute accumulates toward 90 units'},
+  {n:'Cool Heads',u:['pump','cool'],g:'Reach 20 compute/s',
+    l:'Lesson: power becomes heat; cooling and climate control achievable density.',t:'Heat is the enemy. Pump water, cool the racks, or build in the snow.',
+    chk:()=>S.compGen>=20,prog:()=>Math.min(1,S.compGen/20)},
+  {n:'The Lab Era',u:['lab'],g:'Accumulate 150 research',
+    l:'Lesson: research consumes compute that could otherwise serve workloads.',t:'Compute in, science out. Watch the free/total compute indicator.',
+    chk:()=>S.res.res>=150,prog:()=>Math.min(1,S.res.res/150)},
+  {n:'Rare Finds',u:['rx','wind'],g:'Stockpile 40 rare earth',
+    l:'Lesson: hardware depends on constrained minerals and geographic trade-offs.',t:'The good stuff hides in the tundra. Wind power helps up north.',
+    chk:()=>S.res.re>=40,prog:()=>Math.min(1,S.res.re/40)},
+  {n:'Hyperscale',u:['dc','net'],g:'Serve an inference surge for 30 stable seconds · 45 free compute',
+    l:'Lesson: inference values sustained capacity, uptime and power stability.',t:'The SLA clock advances with 45 free compute and a healthy grid; failures reduce it.',
+    chk:()=>S.work.inference>=30,prog:()=>Math.min(1,S.work.inference/30),work:'INFERENCE SLA · hold 45 free compute with ≥90% grid health'},
+  {n:'Robot Workforce',u:['rf'],g:'Assemble 15 robots',
+    l:'Lesson: automation increases throughput but creates its own material demand.',t:'Robots mine faster, so you can build more robots. You see where this goes.',
+    chk:()=>S.res.bot>=15,prog:()=>Math.min(1,S.res.bot/15)},
+  {n:'The Awakening',u:['agi','fus'],g:'Charge the fictional AGI Core to 100%',
+    l:'Final lesson: no real compute threshold guarantees AGI—this is a fictional capstone.',t:'50 free compute/s, steady power, and a diet of research. Wake the fictional core.',
+    chk:()=>S.agi>=100,prog:()=>S.agi/100},
+];
+
+/* ---------- sprite helpers ---------- */
+function makeCanvas(w,h){const c=document.createElement('canvas');c.width=w;c.height=h;return c;}
+function makeSil(c){
+  const s=makeCanvas(c.width,c.height),g=s.getContext('2d');
+  g.drawImage(c,0,0);
+  g.globalCompositeOperation='source-in';
+  g.fillStyle='#000';g.fillRect(0,0,s.width,s.height);
+  return s;
+}
+function hexRGB(h){const n=parseInt(h.slice(1),16);return[n>>16&255,n>>8&255,n&255];}
+function shadeHex(h,f){const[r,g,b]=hexRGB(h);const m=v=>Math.max(0,Math.min(255,Math.round(v*f)));return'rgb('+m(r)+','+m(g)+','+m(b)+')';}
+function rgba(h,a){const[r,g,b]=hexRGB(h);return'rgba('+r+','+g+','+b+','+a+')';}
+function px(g,x,y,c,s){g.fillStyle=c;g.fillRect(Math.round(x),Math.round(y),s||PX,s||PX);}
+
+function diamondRows(g,cx,cy,w,h,fill){
+  for(let ry=0;ry<h;ry+=PX){
+    const half=h/2,dy=Math.abs(ry+PX/2-half),hw=(1-dy/half)*(w/2);
+    const x0=Math.round((cx-hw)/PX)*PX,x1=Math.round((cx+hw)/PX)*PX;
+    for(let xx=x0;xx<x1;xx+=PX){g.fillStyle=fill(xx,ry);g.fillRect(xx,cy+ry,PX,PX);}
+  }
+}
+
+/* ---------- tile sprites ---------- */
+const tileCache={};
+function tileSpr(biome,dep,v){
+  const key=biome+'_'+dep+'_'+v;
+  if(tileCache[key])return tileCache[key];
+  const c=makeCanvas(TW,TH+8),g=c.getContext('2d');
+  const r=mulberry32(SEED^(biome*131+dep*577+v*7919));
+  const pal=biomePal[biome];
+  diamondRows(g,TW/2,4,TW,TH,()=>shadeHex(pal[3],0.5));                    // skirt
+  diamondRows(g,TW/2,0,TW,TH,()=>r()<0.82?pal[0]:pal[1+Math.floor(r()*3)]); // top
+  if(dep){
+    const dc={[DEP.SI]:['#f3e6b8','#e2cd85'],[DEP.FE]:['#aebccb','#7e93aa'],[DEP.RE]:['#c790f2','#9d68d6']}[dep];
+    for(let i=0;i<7;i++){
+      const ang=r()*Math.PI*2,rad=r()*8+2;
+      const x=TW/2+Math.cos(ang)*rad*1.7,y=TH/2+Math.sin(ang)*rad*0.8;
+      px(g,x,y,dc[i%2]);px(g,x+PX,y,dc[(i+1)%2]);px(g,x,y-PX,dc[0]);
+    }
+  }
+  tileCache[key]=c;return c;
+}
+
+/* ---------- building sprites ---------- */
+const SPR={};
+function buildSprites(){
+  for(const k of Object.keys(BD)){
+    const d=BD[k],TOPM=16;
+    const c=makeCanvas(TW,TH+d.h+TOPM),g=c.getContext('2d');
+    const hash=[...k].reduce((a,ch)=>Math.imul(a,31)+ch.charCodeAt(0)|0,7);
+    const r=mulberry32(SEED^hash);
+    const leds=[];
+    const ledAdd=(x,y,cc,p)=>leds.push({x,y,c:cc,p:p||3+r()*4,ph:r()*6.28});
+    const cx=TW/2,gy=c.height-TH,h=d.h,w=d.w;
+    const th=Math.round(w/2);
+    const bTop=Math.round(gy+(TH-th)/2),tTop=bTop-h;
+    const L={x:cx-w/2,y:bTop+th/2},B={x:cx,y:bTop+th},R={x:cx+w/2,y:bTop+th/2};
+    // ground shadow
+    g.fillStyle='rgba(0,0,0,.28)';
+    g.beginPath();g.ellipse(cx,gy+TH/2,w/2*0.95,TH/2*0.8,0,0,Math.PI*2);g.fill();
+
+    if(k==='wind'){
+      diamondRows(g,cx,gy+TH/2-6,24,12,()=>'#6c7688');
+      const topY=gy+TH/2-h;
+      g.fillStyle='#c3ccdd';g.fillRect(cx-2,topY,4,h);
+      g.fillStyle='#93a0b5';g.fillRect(cx+1,topY,1,h);
+      g.fillStyle='#e8eef8';g.fillRect(cx-4,topY-3,8,5);
+      leds.push({x:cx,y:topY-2,c:'#ff6b6b',p:2.2,ph:0});
+      SPR[k]={img:c,anchor:c.height-TH,leds,sil:makeSil(c),pivot:{x:cx,y:topY-1}};
+      continue;
+    }
+
+    // walls
+    g.fillStyle=d.cols[1];
+    g.beginPath();g.moveTo(L.x,L.y-h);g.lineTo(B.x,B.y-h);g.lineTo(B.x,B.y);g.lineTo(L.x,L.y);g.closePath();g.fill();
+    g.fillStyle=d.cols[2];
+    g.beginPath();g.moveTo(R.x,R.y-h);g.lineTo(B.x,B.y-h);g.lineTo(B.x,B.y);g.lineTo(R.x,R.y);g.closePath();g.fill();
+    // top diamond, speckled
+    diamondRows(g,cx,tTop,w,th,()=>{const q=r();return q<0.8?d.cols[0]:(q<0.9?shadeHex(d.cols[0],1.15):shadeHex(d.cols[0],0.85));});
+    // wall pixel noise
+    g.globalAlpha=0.3;
+    for(let i=0;i<26;i++){
+      const t1=r(),u1=r()*h;
+      px(g,L.x+t1*(B.x-L.x),(L.y+t1*(B.y-L.y))-u1,shadeHex(d.cols[1],0.68));
+      const t2=r(),u2=r()*h;
+      px(g,R.x+t2*(B.x-R.x),(R.y+t2*(B.y-R.y))-u2,shadeHex(d.cols[2],0.72));
+    }
+    g.globalAlpha=1;
+    // silhouette
+    g.strokeStyle='rgba(0,0,0,.4)';g.lineWidth=1;
+    g.beginPath();g.moveTo(L.x,L.y-h);g.lineTo(cx,tTop);g.lineTo(R.x,R.y-h);g.lineTo(R.x,R.y);g.lineTo(B.x,B.y);g.lineTo(L.x,L.y);g.closePath();g.stroke();
+
+    // details
+    switch(k){
+      case 'solar':
+        for(let i=-2;i<=2;i++)for(let j=-2;j<=2;j++){
+          const x=cx+(i-j)*5,y=tTop+th/2+(i+j)*2.5;
+          px(g,x,y,'#2b4a7a',3);px(g,x,y,'#4477c0',2);
+        }
+        ledAdd(cx+w/2-8,B.y-h-2,'#8fd8ff');break;
+      case 'sx':
+        g.fillStyle='#565e6e';g.fillRect(cx-2,tTop-8,4,10);
+        g.fillStyle='#8a93a5';g.fillRect(cx-6,tTop-10,12,3);
+        ledAdd(cx,tTop-13,'#ffd166',5);break;
+      case 'mx':
+        g.fillStyle=shadeHex(d.cols[1],0.6);g.fillRect(cx-11,B.y-11,9,9);
+        g.fillStyle='#1c222e';g.fillRect(cx-10,B.y-9,7,7);
+        ledAdd(cx+9,B.y-h+4,'#ffd166');break;
+      case 'fab':
+        g.fillStyle='#78808f';g.fillRect(cx+9,tTop-10,6,14);
+        g.fillStyle='#aab2c0';g.fillRect(cx+9,tTop-12,6,3);
+        ledAdd(cx+12,tTop-14,'#ff8f6b',2.2);ledAdd(cx-9,B.y-6,'#8fd8ff');break;
+      case 'bat':
+        for(let i=0;i<4;i++){g.fillStyle=i<3?'#5ee6a8':'#26352f';g.fillRect(cx-13+i*7,B.y-h+7,5,8);}
+        ledAdd(cx+12,B.y-h+5,'#8dffb8',2);break;
+      case 'srv':
+        for(let i=0;i<5;i++)for(let j=0;j<2;j++)
+          ledAdd(cx+5+j*7,B.y-h+7+i*4,['#5ee6a8','#8fd8ff','#ffd166'][(i+j)%3]);
+        break;
+      case 'pump':
+        g.fillStyle='#7fb6e8';g.beginPath();g.arc(cx,tTop+th/2,5,0,Math.PI*2);g.fill();
+        g.fillStyle='#2e5b86';g.beginPath();g.arc(cx,tTop+th/2,2.5,0,Math.PI*2);g.fill();
+        ledAdd(cx-8,B.y-h+4,'#8fd8ff');break;
+      case 'cool':
+        g.fillStyle=shadeHex(d.cols[0],1.12);
+        g.beginPath();g.ellipse(cx,tTop+th/2,w*0.3,th*0.3,0,0,Math.PI*2);g.fill();
+        g.fillStyle='#0e1420';
+        g.beginPath();g.ellipse(cx,tTop+th/2,w*0.18,th*0.18,0,0,Math.PI*2);g.fill();
+        ledAdd(cx-10,B.y-h+6,'#8fd8ff');break;
+      case 'lab':
+        g.fillStyle='#cfd8ea';g.beginPath();g.arc(cx,tTop+th/2,7,Math.PI,0);g.fill();
+        g.fillStyle='#eef2fa';g.beginPath();g.arc(cx-2,tTop+th/2-2,2,0,Math.PI*2);g.fill();
+        ledAdd(cx,tTop+th/2-9,'#c08ff0',2.5);break;
+      case 'rx':{
+        const dc2=['#c790f2','#9d68d6'];
+        for(let i=0;i<4;i++)px(g,cx-7+i*4,tTop+th/2-2+(i%2)*3,dc2[i%2],3);
+        ledAdd(cx,B.y-h+5,'#c08ff0');break;}
+      case 'dc':
+        g.fillStyle=shadeHex(d.cols[0],0.65);
+        for(let i=0;i<3;i++)g.fillRect(cx-15+i*11,tTop+th/2-2,7,3);
+        for(let i=0;i<6;i++){
+          ledAdd(L.x+6,L.y-h+6+i*3.6,'#7fe7ff',6);
+          ledAdd(R.x-8,R.y-h+6+i*3.6,'#5ee6a8',5);
+        }
+        break;
+      case 'net':
+        g.strokeStyle='#9f7bff';g.lineWidth=1;
+        for(let i=-1;i<=1;i++){g.beginPath();g.moveTo(cx,tTop+th/2);g.lineTo(cx+i*11,tTop+th/2+6);g.stroke();ledAdd(cx+i*11,tTop+th/2+6,'#9f7bff',2+i*.2);}
+        ledAdd(cx,tTop+th/2,'#e6dcff',1.5);break;
+      case 'rf':
+        g.fillStyle='#c9a13f';g.fillRect(cx+7,tTop-12,3,14);g.fillRect(cx-9,tTop-12,19,3);
+        g.strokeStyle='#c9a13f';g.lineWidth=1;
+        g.beginPath();g.moveTo(cx-8,tTop-10);g.lineTo(cx-8,tTop-2);g.stroke();
+        for(let i=0;i<6;i++){
+          const t=i/6;
+          px(g,L.x+4+t*(B.x-L.x-4),L.y+t*(B.y-L.y)-4,i%2?'#e8c14a':'#20242c');
+        }
+        ledAdd(cx-8,tTop-1,'#ffd166',3);break;
+      case 'fus':
+        g.fillStyle='#9fb6e2';g.beginPath();g.arc(cx,tTop+th/2,9,Math.PI,0);g.fill();
+        g.strokeStyle='rgba(127,231,255,.85)';g.lineWidth=2;
+        g.beginPath();g.ellipse(cx,tTop+th/2,13,5,0,0,Math.PI*2);g.stroke();
+        ledAdd(cx,tTop+th/2-4,'#7fe7ff',1.6);break;
+      case 'agi':
+        for(let i=0;i<7;i++)leds.push({x:cx-1,y:B.y-h+5+i*5,c:'#9f7bff',p:1.2+i*0.15,ph:i*0.8});
+        g.strokeStyle='rgba(159,123,255,.9)';g.lineWidth=2;
+        g.beginPath();g.ellipse(cx,tTop-6,15,5,0,0,Math.PI*2);g.stroke();
+        ledAdd(cx,tTop-12,'#e6dcff',0.9);break;
+    }
+    SPR[k]={img:c,anchor:c.height-TH,leds,sil:makeSil(c)};
+  }
+}
+
+/* ---------- atmosphere & particles ---------- */
+function mixA(a,b,t){return[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+function rgbStr(a){return'rgb('+Math.round(a[0])+','+Math.round(a[1])+','+Math.round(a[2])+')';}
+const SKY={nt:hexRGB('#04060d'),dt:hexRGB('#2b4266'),nb:hexRGB('#090c17'),db:hexRGB('#122038'),kt:hexRGB('#8a4f38'),kb:hexRGB('#472736')};
+const STARS=[];{const r=mulberry32(SEED+9);for(let i=0;i<150;i++)STARS.push({x:r(),y:r(),s:r()<0.85?1:2,p:1+r()*2.5,ph:r()*6.28});}
+const PARTS=[];
+const PCFG={
+  cool:{c:'214,232,252',ox:0,vy:-13,s0:2.4,g:1.7,ttl:2.4,rate:2.4,a0:0.34},
+  fab:{c:'148,152,166',ox:12,vy:-8,s0:1.8,g:1.1,ttl:2.8,rate:1.7,a0:0.3},
+  fus:{c:'127,231,255',ox:0,vy:-7,s0:1.3,g:0.4,ttl:1.5,rate:1.5,a0:0.28},
+  rf:{c:'255,209,102',ox:-6,vy:-5,s0:1.1,g:0.2,ttl:0.9,rate:1.2,a0:0.4},
+};
+function spawnParts(dt){
+  if(PARTS.length>300)return;
+  for(const b of S.b){
+    const cfg=PCFG[b.t];
+    if(!cfg)continue;
+    const act=b.t==='fus'?1:b.a;
+    if(act<=0.05)continue;
+    if(Math.random()>=cfg.rate*dt)continue;
+    const d=BD[b.t];
+    PARTS.push({bx:b.x,by:b.y,ox:cfg.ox+(Math.random()*6-3),oy:-(d.h+d.w/4),
+      vx:(Math.random()-0.5)*3,vy:cfg.vy*(0.8+Math.random()*0.4),
+      s:cfg.s0,g:cfg.g,life:0,ttl:cfg.ttl*(0.8+Math.random()*0.4),c:cfg.c,a0:cfg.a0});
+  }
+}
+function updParts(dt){
+  for(let i=PARTS.length-1;i>=0;i--){
+    const p=PARTS[i];
+    p.life+=dt;
+    if(p.life>p.ttl){PARTS.splice(i,1);continue;}
+    p.ox+=p.vx*dt;p.oy+=p.vy*dt;p.s+=p.g*dt;
+  }
+}
+/* ================= state ================= */
+const S={
+  res:{si:24,fe:14,re:0,h2o:0,ch:0,res:0,bot:0},
+  b:[],level:0,unlocked:new Set(LEVELS[0].u),
+  time:CYC*0.3,day:1,eGen:0,eUse:0,eNet:0,eRatio:1,compGen:0,compUse:0,compFree:0,
+  agi:0,battery:0,won:false,paused:false,speed:1,placed:0,overlay:'none',sound:true,
+  work:{training:0,inference:0},metrics:{utilization:0,pue:0,headroom:0},levelStart:0
+};
+let started=false,tool=null,selectedB=null,activeCat='power',hover={x:-1,y:-1},mouse={x:0,y:0};
+const cam={x:0,y:0,z:1.3};
+let audioCtx=null;
+function playTone(kind){
+  if(!S.sound||!started)return;
+  try{
+    audioCtx=audioCtx||new(window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(),g=audioCtx.createGain(),now=audioCtx.currentTime;
+    const cfg={place:[330,.07,'square'],del:[150,.1,'sawtooth'],level:[660,.24,'sine'],warn:[110,.1,'square'],save:[520,.06,'sine']}[kind]||[260,.06,'sine'];
+    o.type=cfg[2];o.frequency.setValueAtTime(cfg[0],now);if(kind==='level')o.frequency.exponentialRampToValueAtTime(990,now+cfg[1]);
+    g.gain.setValueAtTime(.045,now);g.gain.exponentialRampToValueAtTime(.001,now+cfg[1]);o.connect(g);g.connect(audioCtx.destination);o.start(now);o.stop(now+cfg[1]);
+  }catch(_){S.sound=false;}
+}
+
+function isoToScreen(x,y){return{x:(x-y)*(TW/2)*cam.z+cam.x,y:(x+y)*(TH/2)*cam.z+cam.y};}
+function screenToTile(px2,py2){
+  const wx=(px2-cam.x)/cam.z,wy=(py2-cam.y)/cam.z;
+  const fx=wx/(TW/2),fy=wy/(TH/2);
+  return{x:Math.floor((fx+fy)/2),y:Math.floor((fy-fx)/2)};
+}
+function tileBiome(b){return map[b.y*N+b.x].biome;}
+function focusNearestValid(k){
+  if(!k||BD[k].on==='land')return;
+  const here=screenToTile(W/2,H*.42);let best=null,dist=Infinity;
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++)if(canPlace(k,x,y)){
+    const d=(x-here.x)*(x-here.x)+(y-here.y)*(y-here.y);if(d<dist){dist=d;best={x,y};}
+  }
+  if(best){cam.x=W/2-(best.x-best.y)*(TW/2)*cam.z;cam.y=H*.4-(best.x+best.y)*(TH/2)*cam.z;}
+}
+
+/* ================= build / demolish ================= */
+function afford(k){const d=BD[k];for(const r in d.cost)if(S.res[r]<d.cost[r])return false;return true;}
+function placeReason(k,x,y){return Core.placementReason(BD[k],cellAt(x,y),TB,DEP);}
+function canPlace(k,x,y){
+  return placeReason(k,x,y)==='';
+}
+function place(k,x,y){
+  if(!S.unlocked.has(k))return;
+  const why=placeReason(k,x,y);
+  if(why){toast(why,'warn');playTone('warn');return;}
+  if(!afford(k)){toast('Not enough resources · needs '+costStr(BD[k].cost),'warn');playTone('warn');return;}
+  for(const r in BD[k].cost)S.res[r]-=BD[k].cost[r];
+  const b={t:k,x,y,a:0,cool:false,builtAt:S.time};
+  S.b.push(b);cellAt(x,y).b=b;S.placed++;
+  selectedB=b;playTone('place');
+}
+function demolish(x,y){
+  const c=cellAt(x,y);if(!c||!c.b)return;
+  const d=BD[c.b.t];
+  for(const r in d.cost)S.res[r]+=Math.floor(d.cost[r]*0.5);
+  if(selectedB===c.b)selectedB=null;
+  S.b.splice(S.b.indexOf(c.b),1);c.b=null;
+  toast('Demolished '+d.n+' · 50% refunded','');playTone('del');
+}
+
+/* ================= simulation ================= */
+function sim(dt){
+  S.time+=dt;
+  const ph=(S.time%CYC)/CYC;
+  S.day=0.5-0.5*Math.cos(ph*Math.PI*2);
+  const dayF=0.25+0.75*S.day;
+  // energy
+  let gen=0,use=0,itPower=0;
+  for(const b of S.b){
+    const d=BD[b.t];
+    if(b.t==='solar'){const out=4*dayF*(tileBiome(b)===TB.DESERT?1.6:1);gen+=out;b.a=out/(tileBiome(b)===TB.DESERT?6.4:4);}
+    else if(b.t==='wind'){const bi=tileBiome(b),out=6*((bi===TB.MESA||bi===TB.TUNDRA)?1.3:1);gen+=out;b.a=1;}
+    else if(b.t==='fus'){gen+=60;b.a=1;}
+    if(d.eUse)use+=d.eUse;
+    if(['srv','dc','lab','agi'].includes(b.t))itPower+=d.eUse||0;
+  }
+  const batteries=S.b.filter(b=>b.t==='bat'),batteryCap=batteries.length*60;
+  const battery=Core.batteryStep(gen,use,S.battery,batteryCap,batteries.length*12,dt,.9);gen=battery.generation;S.battery=battery.stored;
+  for(const b of batteries)b.a=batteryCap?S.battery/batteryCap:0;
+  S.eGen=gen;S.eUse=use;S.eNet=gen-use;
+  const eR=Core.powerRatio(gen,use);S.eRatio=eR;
+  const boost=1+Math.min(1,S.res.bot*0.02);
+  // pumps
+  for(const b of S.b)if(b.t==='pump'){S.res.h2o+=1.5*eR*dt;b.a=eR;}
+  // cooling
+  const coolSet=new Set();
+  for(const b of S.b)if(b.t==='cool'){
+    const need=0.8*eR*dt;
+    if(eR>0.05&&S.res.h2o>=need){
+      S.res.h2o-=need;b.a=eR;
+      for(const[nx,ny]of nb4(b.x,b.y)){
+        const c=cellAt(nx,ny);
+        if(c&&c.b&&(c.b.t==='srv'||c.b.t==='dc'))coolSet.add(c.b);
+      }
+    }else b.a=0;
+  }
+  // local network fabric: adjacency models short high-bandwidth links
+  const netSet=new Set();
+  for(const b of S.b)if(b.t==='net'){
+    b.a=eR;
+    for(const[nx,ny]of nb4(b.x,b.y)){const c=cellAt(nx,ny);if(c&&c.b&&(c.b.t==='srv'||c.b.t==='dc'))netSet.add(c.b);}
+  }
+  // extraction
+  for(const b of S.b){
+    if(b.t==='sx'){S.res.si+=1.2*eR*boost*dt;b.a=eR;}
+    else if(b.t==='mx'){S.res.fe+=1.0*eR*boost*dt;b.a=eR;}
+    else if(b.t==='rx'){S.res.re+=0.6*eR*boost*dt;b.a=eR;}
+  }
+  // fabs
+  for(const b of S.b)if(b.t==='fab'){
+    const f=eR;
+    if(f>0.001){
+      const nSi=1.5*f*dt,nFe=0.8*f*dt;
+      const rr=Math.min(1,S.res.si/nSi,S.res.fe/nFe);
+      if(rr>0){S.res.si-=nSi*rr;S.res.fe-=nFe*rr;S.res.ch+=0.5*f*rr*dt;}
+      b.a=f*Math.max(0,Math.min(1,rr));
+    }else b.a=0;
+  }
+  // compute
+  let comp=0;
+  for(const b of S.b)if(b.t==='srv'||b.t==='dc'){
+    const base=b.t==='srv'?3:14;
+    b.cool=coolSet.has(b);b.net=netSet.has(b);
+    const m=eR*(b.cool?1.5:1)*(b.net?1.2:1)*(tileBiome(b)===TB.TUNDRA?1.25:1);
+    comp+=base*m;b.a=Math.min(1,m);
+  }
+  S.compGen=comp;
+  // labs
+  const labs=S.b.filter(b=>b.t==='lab');
+  let labUse=0;
+  if(labs.length){
+    const need=labs.length*4;
+    const lr=Math.min(1,comp/need)*eR;
+    for(const b of labs)b.a=lr;
+    S.res.res+=labs.length*lr*dt;
+    labUse=Math.min(need,comp);
+  }
+  // training and inference workloads compete for available compute
+  let workUse=0;
+  if(S.level===3&&S.work.training<90){
+    workUse=Math.min(9,Math.max(0,comp-labUse));
+    S.work.training=Math.min(90,S.work.training+workUse*dt);
+  }else if(S.level===7&&S.work.inference<30){
+    const stable=eR>=0.9&&comp-labUse>=45;
+    if(stable){workUse=45;S.work.inference=Math.min(30,S.work.inference+dt);}
+    else S.work.inference=Math.max(0,S.work.inference-dt*.5);
+  }
+  // robot factories
+  for(const b of S.b)if(b.t==='rf'){
+    const f=eR;
+    if(f>0.001){
+      const nc=1*f*dt,nf=1.2*f*dt;
+      const rr=Math.min(1,S.res.ch/nc,S.res.fe/nf);
+      if(rr>0){S.res.ch-=nc*rr;S.res.fe-=nf*rr;S.res.bot+=0.1*f*rr*dt;}
+      b.a=f*Math.max(0,Math.min(1,rr));
+    }else b.a=0;
+  }
+  // AGI core
+  const agiB=S.b.find(b=>b.t==='agi');
+  if(agiB&&!S.won){
+    const compFree=comp-labUse-workUse;
+    const ok=eR>0.98&&compFree>=50&&S.res.res>0.01;
+    if(ok){
+      const want=3*dt,cons=Math.min(S.res.res,want);
+      S.res.res-=cons;
+      S.agi=Math.min(100,S.agi+(100/90)*dt*(cons/want));
+      agiB.a=1;
+    }else agiB.a=0;
+    S.compUse=labUse+workUse+(ok?50:0);
+  }else S.compUse=labUse+workUse;
+  S.compFree=Math.max(0,comp-S.compUse);
+  S.metrics.utilization=comp>0?Math.min(1,S.compUse/comp):0;
+  S.metrics.pue=itPower>0?use/itPower:0;
+  S.metrics.headroom=S.eNet;
+  S.res.h2o=Math.max(0,S.res.h2o);
+  checkLevel();
+}
+
+function checkLevel(){
+  if(S.won)return;
+  const L=LEVELS[S.level];
+  if(!L||!L.chk())return;
+  if(S.level>=9){win();return;}
+  const completed=S.level;
+  S.level++;
+  const nl=LEVELS[S.level];
+  for(const k of nl.u)S.unlocked.add(k);
+  toast('LEVEL '+S.level+' COMPLETE ▸ '+nl.n.toUpperCase(),'lv');
+  toast('Unlocked: '+nl.u.map(k=>BD[k].n).join(' · '),'un');
+  toast(nl.t,'tip');
+  playTone('level');showDebrief(completed);refreshPalette();saveGame(true);
+}
+function win(){
+  S.won=true;
+  document.getElementById('winstats').textContent=
+    'Time '+Math.round(S.time)+'s · '+S.b.length+' buildings · '+
+    Math.floor(S.res.bot)+' robots · '+Math.floor(S.res.res)+' research banked';
+  document.getElementById('winov').style.display='flex';
+}
+
+/* ================= rendering ================= */
+function drawDiamond(x,y,fill,stroke){
+  const p=isoToScreen(x,y),z=cam.z;
+  ctx.beginPath();
+  ctx.moveTo(p.x,p.y);ctx.lineTo(p.x+TW/2*z,p.y+TH/2*z);
+  ctx.lineTo(p.x,p.y+TH*z);ctx.lineTo(p.x-TW/2*z,p.y+TH/2*z);
+  ctx.closePath();
+  if(fill){ctx.fillStyle=fill;ctx.fill();}
+  if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1.5;ctx.stroke();}
+}
+
+function draw(t){
+  // sky gradient across the day cycle
+  const dayF=S.day,night=1-S.day;
+  const duskF=Math.max(0,1-Math.abs(night-0.32)/0.26);
+  let top=mixA(SKY.nt,SKY.dt,dayF),bot=mixA(SKY.nb,SKY.db,dayF);
+  top=mixA(top,SKY.kt,duskF*0.5);bot=mixA(bot,SKY.kb,duskF*0.3);
+  const sky=ctx.createLinearGradient(0,0,0,H);
+  sky.addColorStop(0,rgbStr(top));sky.addColorStop(1,rgbStr(bot));
+  ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+  // stars
+  if(night>0.08){
+    ctx.fillStyle='#cfd9ff';
+    for(const st of STARS){
+      ctx.globalAlpha=night*(0.25+0.45*(0.5+0.5*Math.sin(t*st.p+st.ph)));
+      ctx.fillRect(st.x*W,st.y*H,st.s,st.s);
+    }
+    ctx.globalAlpha=1;
+  }
+  const z=cam.z,ledDraws=[],visB=[];
+  // pass 1: tiles (+ water sparkle), collect visible buildings
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){
+    const sx=(x-y)*(TW/2)*z+cam.x-(TW/2)*z;
+    const sy=(x+y)*(TH/2)*z+cam.y;
+    if(sx+TW*z<-4||sx>W+4||sy>H+8||sy+TH*z<-120*z)continue;
+    const c=map[y*N+x];
+    ctx.drawImage(tileSpr(c.biome,c.dep,c.v),sx,sy,TW*z,(TH+8)*z);
+    if(S.overlay==='resources'&&c.dep){
+      const cc=c.dep===DEP.SI?'rgba(255,225,130,.24)':c.dep===DEP.FE?'rgba(170,196,224,.25)':'rgba(201,144,242,.28)';
+      drawDiamond(x,y,cc,cc.replace(/\.[0-9]+\)/,'.8)'));
+    }
+    if(tool&&tool!=='del'&&BD[tool].on!=='land'&&!c.b&&canPlace(tool,x,y)){
+      const pulse=.13+.07*(.5+.5*Math.sin(t*4+(x+y)*.3));
+      drawDiamond(x,y,'rgba(94,230,168,'+pulse+')','rgba(94,230,168,.65)');
+    }
+    if(c.biome===TB.WATER){
+      const hs=(x*73+y*151)%97;
+      const tw2=Math.sin(t*1.7+hs);
+      if(tw2>0.15){
+        ctx.globalAlpha=(tw2-0.15)*0.45;
+        ctx.fillStyle='#bfe3ff';
+        ctx.fillRect(sx+(10+(hs*13)%40)*z*0.9,sy+(9+(hs*7)%14)*z*0.8,2*z,z);
+        ctx.globalAlpha=1;
+      }
+    }
+    if(c.b)visB.push({b:c.b,sx,sy});
+  }
+  // pass 2: sun shadows — direction/length track time of day
+  if(S.day>0.12){
+    const ph=(S.time%CYC)/CYC;
+    const u=Math.max(0,Math.min(1,(ph-0.2)/0.6));
+    const sunH=Math.sin(Math.PI*u);
+    const shear=(0.5-u)*2.2,squash=0.3+0.55*(1-sunH);
+    ctx.globalAlpha=0.24*Math.min(1,S.day*1.5);
+    for(const v of visB){
+      const s=SPR[v.b.t],ih=s.img.height;
+      ctx.save();
+      ctx.translate(v.sx+TW/2*z,v.sy+TH/2*z);
+      ctx.transform(1,0,shear,-squash,0,0);
+      ctx.drawImage(s.sil,-TW/2*z,-(ih-TH/2)*z,TW*z,ih*z);
+      ctx.restore();
+    }
+    ctx.globalAlpha=1;
+  }
+  // pass 3: buildings + per-frame animation
+  for(const v of visB){
+    const s=SPR[v.b.t],by=v.sy-s.anchor*z;
+    if(selectedB===v.b)drawDiamond(v.b.x,v.b.y,'rgba(127,231,255,.12)','rgba(127,231,255,.9)');
+    const age=Math.max(0,S.time-(v.b.builtAt||0)),pop=Math.min(1,age/.45),dw=TW*z*pop,dh=s.img.height*z*pop;
+    ctx.globalAlpha=.45+.55*pop;ctx.drawImage(s.img,v.sx+(TW*z-dw)/2,by+s.img.height*z-dh,dw,dh);ctx.globalAlpha=1;
+    if(v.b.t==='wind'){
+      const bi=tileBiome(v.b),spd=(bi===TB.MESA||bi===TB.TUNDRA)?3.4:2.2;
+      const hx=v.sx+s.pivot.x*z,hy=by+s.pivot.y*z;
+      const a0=t*spd+(v.b.x*7+v.b.y*13)%6.28;
+      ctx.strokeStyle='#eef3fb';ctx.lineWidth=Math.max(1.3,1.8*z);
+      for(let i=0;i<3;i++){
+        const a=a0+i*2*Math.PI/3;
+        ctx.beginPath();ctx.moveTo(hx,hy);
+        ctx.lineTo(hx+Math.cos(a)*13*z,hy+Math.sin(a)*11*z);
+        ctx.stroke();
+      }
+    }
+    if(v.b.t==='agi'){
+      const d=BD.agi,cxs=v.sx+TW/2*z;
+      const ringY=by+(s.img.height-TH-d.h-6)*z;
+      const pul=0.5+0.5*Math.sin(t*2.4);
+      ctx.strokeStyle=rgba('#b79bff',0.25+0.35*pul);
+      ctx.lineWidth=2*z;
+      ctx.beginPath();ctx.ellipse(cxs,ringY,(15+3*pul)*z,(5+1.2*pul)*z,0,0,Math.PI*2);ctx.stroke();
+      if(S.agi>0.5){
+        const hgt=(16+70*(S.agi/100))*z;
+        const grd=ctx.createLinearGradient(0,ringY,0,ringY-hgt);
+        grd.addColorStop(0,rgba('#b79bff',0.3));grd.addColorStop(1,rgba('#b79bff',0));
+        ctx.fillStyle=grd;
+        ctx.fillRect(cxs-3*z,ringY-hgt,6*z,hgt);
+      }
+    }
+    let mark=null;
+    if(S.overlay==='power')mark=(v.b.t==='solar'||v.b.t==='wind'||v.b.t==='fus')?'#ffd166':BD[v.b.t].eUse?'#ff7a6b':null;
+    else if(S.overlay==='cooling')mark=(v.b.t==='pump'||v.b.t==='cool')?'#7fe7ff':(v.b.t==='srv'||v.b.t==='dc')?(v.b.cool?'#5ee6a8':'#ffb46b'):null;
+    else if(S.overlay==='compute')mark=(v.b.t==='srv'||v.b.t==='dc')?'#5ee6a8':v.b.t==='net'?'#9f7bff':v.b.t==='lab'?'#ff9ecf':v.b.t==='agi'?'#b79bff':null;
+    else if(S.overlay==='resources')mark=(v.b.t==='sx'||v.b.t==='mx'||v.b.t==='rx'||v.b.t==='fab')?'#ffd166':null;
+    if(mark){ctx.fillStyle=mark;ctx.globalAlpha=.65+.25*Math.sin(t*3+v.b.x);ctx.beginPath();ctx.arc(v.sx+TW/2*z,by-5*z,4*z,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;}
+    for(const L2 of s.leds)ledDraws.push({x:v.sx+L2.x*z,y:by+L2.y*z,c:L2.c,p:L2.p,ph:L2.ph,a:v.b.a});
+  }
+  if(S.overlay==='cooling'||S.overlay==='compute'){
+    ctx.save();ctx.globalAlpha=.7;ctx.lineWidth=Math.max(1,2*z);
+    for(const b of S.b){
+      const source=S.overlay==='cooling'&&b.t==='cool'||S.overlay==='compute'&&b.t==='net';if(!source)continue;
+      const p=isoToScreen(b.x,b.y);ctx.strokeStyle=S.overlay==='cooling'?'#7fe7ff':'#9f7bff';
+      for(const[nx,ny]of nb4(b.x,b.y)){const c=cellAt(nx,ny);if(!c||!c.b||!(c.b.t==='srv'||c.b.t==='dc'))continue;const q=isoToScreen(nx,ny);ctx.beginPath();ctx.moveTo(p.x,p.y+TH/2*z);ctx.lineTo(q.x,q.y+TH/2*z);ctx.stroke();}
+    }
+    ctx.restore();
+  }
+  // particles (steam, smoke, sparks) — before lighting so night tints them
+  for(const p of PARTS){
+    const w0=isoToScreen(p.bx,p.by);
+    const a=p.a0*(1-p.life/p.ttl);
+    ctx.fillStyle='rgba('+p.c+','+a.toFixed(3)+')';
+    const sz=p.s*z;
+    ctx.fillRect(w0.x+p.ox*z-sz/2,w0.y+TH/2*z+p.oy*z-sz/2,sz,sz);
+  }
+  // night lighting with dawn/dusk grading
+  if(night>0.03){
+    const nn=Math.pow(night,1.35);
+    let cr=255-(255-92)*nn,cg=255-(255-106)*nn,cb=255-(255-172)*nn;
+    const dawn=((S.time%CYC)/CYC)<0.5;
+    if(dawn){cr=Math.min(255,cr+16*duskF);cb=Math.min(255,cb+22*duskF);}
+    else{cr=Math.min(255,cr+46*duskF);cg=Math.max(0,cg-8*duskF);cb=Math.max(0,cb-36*duskF);}
+    ctx.globalCompositeOperation='multiply';
+    ctx.fillStyle='rgb('+Math.round(cr)+','+Math.round(cg)+','+Math.round(cb)+')';
+    ctx.fillRect(0,0,W,H);
+    ctx.globalCompositeOperation='lighter';
+    for(const b of S.b){
+      const d=BD[b.t];if(!d.glow)continue;
+      const on=b.a>0.05||b.t==='wind'||b.t==='fus'||b.t==='solar';
+      if(!on)continue;
+      const p=isoToScreen(b.x,b.y);
+      const gx=p.x,gy=p.y+TH/2*z-d.h*0.5*z,r0=d.glow.r*z;
+      const gr=ctx.createRadialGradient(gx,gy,0,gx,gy,r0);
+      gr.addColorStop(0,rgba(d.glow.c,d.glow.i*nn));
+      gr.addColorStop(1,rgba(d.glow.c,0));
+      ctx.fillStyle=gr;ctx.fillRect(gx-r0,gy-r0,r0*2,r0*2);
+    }
+    ctx.globalCompositeOperation='source-over';
+  }
+  // LEDs (over lighting) + bloom accumulation
+  bctx.setTransform(1,0,0,1,0,0);
+  bctx.clearRect(0,0,bloomC.width,bloomC.height);
+  bctx.setTransform(0.25,0,0,0.25,0,0);
+  ctx.globalCompositeOperation='lighter';
+  const sPx=Math.max(1.5,2*z);
+  for(const L2 of ledDraws){
+    const bl=0.6+0.4*Math.sin(t*L2.p+L2.ph);
+    const al=bl*(L2.a>0.05?1:0.22)*(0.55+0.45*night);
+    ctx.globalAlpha=al;
+    ctx.fillStyle=L2.c;
+    ctx.fillRect(L2.x,L2.y,sPx,sPx);
+    bctx.globalAlpha=al*0.85;
+    bctx.fillStyle=L2.c;
+    bctx.fillRect(L2.x-3,L2.y-3,sPx+6,sPx+6);
+  }
+  ctx.globalAlpha=1;
+  // bloom composite: blurred quarter-res LED layer, additively blended
+  ctx.save();
+  ctx.globalCompositeOperation='lighter';
+  ctx.imageSmoothingEnabled=true;
+  ctx.filter='blur(5px)';
+  ctx.globalAlpha=0.8;
+  ctx.drawImage(bloomC,0,0,W,H);
+  ctx.restore();
+  ctx.globalCompositeOperation='source-over';
+  // hover / ghost
+  if(started&&!S.won&&hover.x>=0&&hover.x<N&&hover.y>=0&&hover.y<N){
+    const pu=0.55+0.3*Math.sin(t*6);
+    if(tool&&tool!=='del'){
+      const ok=canPlace(tool,hover.x,hover.y)&&afford(tool);
+      drawDiamond(hover.x,hover.y,ok?'rgba(94,230,168,.22)':'rgba(255,122,107,.22)',ok?'rgba(94,230,168,'+pu+')':'rgba(255,122,107,'+pu+')');
+      const s=SPR[tool],p=isoToScreen(hover.x,hover.y);
+      const bob=Math.sin(t*3)*1.5*z;
+      ctx.globalAlpha=.55;
+      ctx.drawImage(s.img,p.x-TW/2*z,p.y-s.anchor*z+bob,TW*z,s.img.height*z);
+      ctx.globalAlpha=1;
+    }else if(tool==='del'){
+      drawDiamond(hover.x,hover.y,'rgba(255,122,107,.2)','rgba(255,122,107,'+pu+')');
+    }else{
+      drawDiamond(hover.x,hover.y,null,'rgba(200,214,255,.4)');
+    }
+  }
+}
+
+/* ================= UI ================= */
+function set(id,v){document.getElementById(id).textContent=v;}
+function costStr(c){return Object.entries(c).map(([k,v])=>v+' '+RES[k].n).join(' + ');}
+function toast(msg,cls){
+  const t=document.createElement('div');
+  t.className='toast '+(cls||'');t.textContent=msg;
+  document.getElementById('toasts').appendChild(t);
+  setTimeout(()=>t.classList.add('show'),10);
+  setTimeout(()=>{t.classList.remove('show');setTimeout(()=>t.remove(),400);},4600);
+}
+function buildCategories(){
+  const el=document.getElementById('cats');el.innerHTML='';
+  for(const[k,c]of Object.entries(CATEGORIES)){
+    const b=document.createElement('button');b.className='catbtn';b.dataset.cat=k;b.textContent=c.n;
+    b.addEventListener('click',()=>{activeCat=k;refreshPalette();});el.appendChild(b);
+  }
+}
+function buildPalette(){
+  buildCategories();
+  const el=document.getElementById('palette');el.innerHTML='';
+  Object.keys(BD).forEach((k,idx)=>{
+    const d=BD[k];
+    const btn=document.createElement('div');
+    btn.className='pbtn';btn.dataset.k=k;btn.tabIndex=0;btn.setAttribute('role','button');btn.setAttribute('aria-label',d.n+', cost '+costStr(d.cost));
+    const ic=document.createElement('canvas');ic.width=56;ic.height=56;
+    const g=ic.getContext('2d');g.imageSmoothingEnabled=false;
+    const s=SPR[k].img,sc=Math.min(52/s.width,52/s.height);
+    g.drawImage(s,(56-s.width*sc)/2,(56-s.height*sc)/2,s.width*sc,s.height*sc);
+    btn.appendChild(ic);
+    const nm=document.createElement('div');nm.className='pn';nm.textContent=d.n;btn.appendChild(nm);
+    const cost=document.createElement('div');cost.className='pcost';
+    cost.textContent=Object.entries(d.cost).map(([r,v])=>v+' '+RES[r].s).join(' · ');
+    btn.appendChild(cost);
+    if(idx<10){
+      const key=document.createElement('div');key.className='pkey';
+      key.textContent=String((idx+1)%10);btn.appendChild(key);
+    }
+    const lock=document.createElement('div');lock.className='plock';btn.appendChild(lock);
+    btn.addEventListener('click',()=>{
+      if(!S.unlocked.has(k))return;
+      tool=tool===k?null:k;if(tool)focusNearestValid(tool);refreshPalette();showToolInfo();
+    });
+    btn.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();btn.click();}});
+    el.appendChild(btn);
+  });
+  const del=document.createElement('div');
+  del.className='pbtn del';del.tabIndex=0;del.setAttribute('role','button');del.setAttribute('aria-label','Demolish building');
+  del.innerHTML='<div class="px">✕</div><div class="pn">Demolish</div><div class="pcost"></div>';
+  del.addEventListener('click',()=>{tool=tool==='del'?null:'del';refreshPalette();showToolInfo();});
+  el.appendChild(del);
+  refreshPalette();
+}
+function refreshPalette(){
+  document.querySelectorAll('.catbtn').forEach(b=>b.classList.toggle('on',b.dataset.cat===activeCat));
+  document.querySelectorAll('.pbtn').forEach(b=>{
+    const k=b.dataset.k;
+    if(k){
+      const un=S.unlocked.has(k);
+      b.hidden=CAT_OF[k]!==activeCat||(!un&&BD[k].lvl>S.level+2);
+      b.classList.toggle('locked',!un);
+      b.classList.toggle('sel',tool===k);
+      b.classList.toggle('poor',un&&!afford(k));
+      b.querySelector('.plock').textContent=un?'':'L'+BD[k].lvl;
+    }else{b.hidden=false;b.classList.toggle('sel',tool==='del');}
+  });
+}
+function showToolInfo(){
+  const el=document.getElementById('toolinfo');
+  if(tool==='del')el.innerHTML='<b class="tn" style="color:var(--warn)">Demolish</b><div class="td">Click a building to remove it — 50% refund. Esc to cancel.</div>';
+  else if(tool){const d=BD[tool],hint=d.on==='si'?' · valid quartz glows green':d.on==='fe'?' · valid ore glows green':d.on==='re'?' · valid rare-earth tiles glow green':d.on==='water'?' · water tiles are valid':'';el.innerHTML='<b class="tn">'+d.n+'</b><div class="tc">Cost: '+costStr(d.cost)+hint+'</div><div class="td">'+d.d+'</div>';}
+  else el.innerHTML='<b class="tn" style="color:var(--txt)">No building selected</b><div class="td">Choose a category and building · select an extractor to reveal deposits · use overlays to diagnose the system.</div>';
+}
+function statusFor(b){
+  const d=BD[b.t],pct=Math.round(Math.min(1,b.a||0)*100),bits=[];
+  if(b.t==='bat'){const cap=Math.max(1,S.b.filter(x=>x.t==='bat').length*60);return'<b>'+d.n+'</b> · '+Math.round(S.battery)+' energy stored<br>'+d.d+'<br><span style="color:var(--gold)">'+Math.round(S.battery/cap*100)+'% fleet reserve</span>';}
+  if(S.eRatio<.99&&d.eUse)bits.push('power limited '+Math.round(S.eRatio*100)+'%');
+  if(b.t==='fab'&&b.a<.05)bits.push(S.res.si<1.5?'needs silicon':S.res.fe<.8?'needs metal':'idle');
+  if(b.t==='cool'&&b.a<.05)bits.push('needs water');
+  if(b.t==='lab'&&b.a<.05)bits.push('needs compute');
+  if(b.t==='rf'&&b.a<.05)bits.push(S.res.ch<1?'needs chips':'needs metal');
+  if((b.t==='srv'||b.t==='dc')&&b.cool)bits.push('cooled ×1.5');
+  if((b.t==='srv'||b.t==='dc')&&b.net)bits.push('networked ×1.2');
+  if(b.t==='net'&&!nb4(b.x,b.y).some(([x,y])=>{const c=cellAt(x,y);return c&&c.b&&(c.b.t==='srv'||c.b.t==='dc');}))bits.push('needs an adjacent server or data center');
+  if((b.t==='srv'||b.t==='dc')&&tileBiome(b)===TB.TUNDRA)bits.push('tundra ×1.25');
+  return'<b>'+d.n+'</b> · '+pct+'% active<br>'+d.d+'<br><span style="color:var(--gold)">'+(bits.join(' · ')||'Operating normally')+'</span>';
+}
+function currentBottleneck(){
+  if(!S.b.length)return'Next step: place a Solar Array.';
+  if(S.eRatio<.75)return'Critical bottleneck: power demand exceeds generation.';
+  if(S.eRatio<.99)return'Bottleneck: low grid headroom is throttling every system.';
+  if(S.level===0&&!S.b.some(b=>b.t==='sx'))return'Next step: select the Silicon Extractor; valid quartz will glow.';
+  if(S.level===2&&S.b.some(b=>b.t==='fab'&&b.a<.05))return'Chip fabs are input-starved. Inspect silicon and metal supply.';
+  if(S.level===3&&S.compGen<9)return'Training bottleneck: build at least 9 compute capacity.';
+  if(S.level===5&&S.compFree<4)return'Research bottleneck: labs need 4 free compute each.';
+  if(S.level===7&&S.compFree<45)return'Inference SLA bottleneck: reserve 45 free compute.';
+  return S.compGen>0&&S.metrics.utilization<.25?'Opportunity: most compute is idle; add a useful workload or research.':'System healthy · '+Math.round(S.eNet*10)/10+' power headroom.';
+}
+function drawMinimap(){
+  const c=document.getElementById('minimap'),g=c.getContext('2d'),s=c.width/N;
+  g.clearRect(0,0,c.width,c.height);g.fillStyle='#070a14';g.fillRect(0,0,c.width,c.height);
+  const cols=['#45834a','#c7a05e','#bdcad8','#80543d','#285f91'];
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){const m=map[y*N+x];g.fillStyle=m.b?'#e8f2ff':cols[m.biome];g.fillRect(x*s,y*s,Math.ceil(s),Math.ceil(s));}
+  if(hover.x>=0&&hover.y>=0){g.strokeStyle='#5ee6a8';g.lineWidth=2;g.strokeRect(hover.x*s-2,hover.y*s-2,5,5);}
+}
+let uiLast=0;
+function uiTick(now){
+  if(now-uiLast<150)return;uiLast=now;
+  const f=v=>v>=100?Math.round(v):Math.round(v*10)/10;
+  set('r_e',f(S.eGen)+' / '+f(S.eUse));
+  const netEl=document.getElementById('r_net');
+  netEl.textContent=(S.eNet>=0?'+':'')+f(S.eNet);
+  netEl.className=S.eNet>=0?'pos':'neg';
+  document.getElementById('chip_e').classList.toggle('bad',S.eNet<0);
+  set('r_si',Math.floor(S.res.si));set('r_fe',Math.floor(S.res.fe));
+  set('r_re',Math.floor(S.res.re));set('r_h2o',Math.floor(S.res.h2o));
+  set('r_ch',Math.floor(S.res.ch));set('r_comp',f(S.compFree)+' free / '+f(S.compGen));
+  set('r_res',Math.floor(S.res.res));set('r_bot',Math.floor(S.res.bot));
+  const L=LEVELS[Math.min(S.level,9)];
+  set('lv_num','LEVEL '+(Math.min(S.level,9)+1)+' / 10');
+  set('lv_name',L.n);set('lv_goal',typeof L.g==='function'?L.g():L.g);set('lv_lesson',L.l||'');
+  document.getElementById('lv_bar').style.width=Math.round(Math.min(1,L.prog())*100)+'%';
+  set('lv_pct',Math.round(Math.min(1,L.prog())*100)+'%');
+  const wl=document.getElementById('workload');wl.style.display=L.work?'block':'none';if(L.work)wl.textContent=L.work;
+  const hasAgi=S.b.some(b=>b.t==='agi');
+  document.getElementById('agiwrap').style.display=hasAgi?'block':'none';
+  if(hasAgi)document.getElementById('agibar').style.width=Math.min(100,S.agi).toFixed(1)+'%';
+  refreshPalette();
+  set('m_grid',Math.round(S.eRatio*100)+'%');set('m_util',Math.round(S.metrics.utilization*100)+'%');
+  set('m_head',(S.eNet>=0?'+':'')+f(S.eNet));set('m_pue',S.metrics.pue?S.metrics.pue.toFixed(2):'—');
+  set('m_store',Math.floor(S.battery)+' / '+S.b.filter(b=>b.t==='bat').length*60);set('m_free',f(S.compFree));
+  document.getElementById('bottleneck').textContent=currentBottleneck();
+  // hover tooltip
+  const c=cellAt(hover.x,hover.y),tt=document.getElementById('tt');
+  if(c&&c.b&&!tool&&started){
+    const d=BD[c.b.t];
+    tt.style.display='block';
+    tt.style.left=Math.min(W-220,mouse.x+14)+'px';
+    tt.style.top=Math.min(H-96,mouse.y+10)+'px';
+    tt.innerHTML='<b>'+d.n+'</b><br>'+
+      (c.b.a>0.02?('Active '+Math.round(Math.min(1,c.b.a)*100)+'%'):'Idle')+
+      (c.b.cool?' · cooled ❄':'')+
+      '<br><span class="dim">Click to pin inspector · right-click to demolish</span>';
+  }else tt.style.display='none';
+  const inspect=selectedB||(c&&c.b?c.b:null);document.getElementById('inspector').innerHTML=inspect?statusFor(inspect):'Hover or click a building to inspect its inputs, output, utilization, and modifiers.';
+  drawMinimap();
+}
+
+/* ================= learning, debriefs & persistence ================= */
+function buildGuide(){
+  const el=document.getElementById('guidegrid');el.innerHTML='';
+  GUIDE.forEach((g,i)=>{const d=document.createElement('div');d.className='guideitem';d.innerHTML='<b>'+(i+1)+'. '+g[0]+'</b>'+g[1];el.appendChild(d);});
+}
+let modalWasPaused=false;
+function showModal(id){modalWasPaused=S.paused;S.paused=true;updSpeedBtns();document.getElementById(id).classList.add('open');}
+function hideModal(id){document.getElementById(id).classList.remove('open');S.paused=modalWasPaused;updSpeedBtns();}
+function showDebrief(completed){
+  const duration=Math.max(1,S.time-S.levelStart),stars=Core.starRating({powerRatio:S.eRatio,utilization:S.metrics.utilization,buildings:S.b.length,targetBuildings:8+(completed+1)*4});
+  S.levelStart=S.time;
+  document.getElementById('debriefstars').textContent='★'.repeat(stars)+'☆'.repeat(3-stars);
+  document.getElementById('debriefbody').innerHTML='<b>'+LEVELS[completed].n+' complete</b><br>'+LEVELS[completed].l+'<br><br>Grid health '+Math.round(S.eRatio*100)+'% · compute utilization '+Math.round(S.metrics.utilization*100)+'% · '+S.b.length+' buildings · '+Math.round(duration)+' seconds';
+  showModal('debrief');
+}
+function saveGame(silent){
+  try{
+    const data=Core.serializeState(S,{seed:SEED});localStorage.setItem('silicon-dawn-v2',data);
+    document.getElementById('save_text').value=data;if(!silent){toast('Game saved locally · portable code ready','un');playTone('save');}return data;
+  }catch(e){if(!silent)toast('Local save unavailable · use the portable save code','warn');return Core.serializeState(S,{seed:SEED});}
+}
+function loadGame(text){
+  try{
+    const data=Core.parseSave(text);for(const c of map)c.b=null;
+    Object.assign(S.res,data.state.res);S.level=Math.max(0,Math.min(9,data.state.level||0));S.time=data.state.time||CYC*.3;S.agi=data.state.agi||0;S.battery=data.state.battery||0;S.placed=data.state.placed||0;
+    S.work=Object.assign({training:0,inference:0},data.state.work||{});S.metrics=Object.assign({utilization:0,pue:0,headroom:0},data.state.metrics||{});S.b=[];selectedB=null;
+    for(const raw of data.buildings){const c=cellAt(raw.x,raw.y);if(!c||c.b||!BD[raw.t])continue;const b={t:raw.t,x:raw.x,y:raw.y,a:raw.a||0,cool:!!raw.cool,builtAt:S.time-1};c.b=b;S.b.push(b);}
+    S.unlocked=new Set();for(let i=0;i<=S.level;i++)for(const k of LEVELS[i].u)S.unlocked.add(k);
+    S.won=false;S.paused=false;activeCat='power';tool=null;refreshPalette();showToolInfo();hideModal('saveio');toast('Save loaded','un');playTone('save');return true;
+  }catch(e){toast('Could not load save · '+e.message,'warn');playTone('warn');return false;}
+}
+function openSavePanel(loadExisting){
+  let txt='';try{txt=loadExisting?(localStorage.getItem('silicon-dawn-v2')||''):saveGame(true);}catch(_){txt=saveGame(true);}
+  document.getElementById('save_text').value=txt;showModal('saveio');
+}
+buildGuide();
+
+/* ================= input ================= */
+const ptrs=new Map();let dragDist=0,lastPinch=0;
+canvas.addEventListener('pointerdown',e=>{
+  canvas.setPointerCapture(e.pointerId);
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  dragDist=0;
+});
+canvas.addEventListener('pointermove',e=>{
+  mouse={x:e.clientX,y:e.clientY};
+  hover=screenToTile(e.clientX,e.clientY);
+  const p=ptrs.get(e.pointerId);
+  if(!p)return;
+  if(ptrs.size===1){
+    const dx=e.clientX-p.x,dy=e.clientY-p.y;
+    cam.x+=dx;cam.y+=dy;
+    dragDist+=Math.abs(dx)+Math.abs(dy);
+    p.x=e.clientX;p.y=e.clientY;
+  }else if(ptrs.size===2){
+    p.x=e.clientX;p.y=e.clientY;
+    const vs=[...ptrs.values()];
+    const dist=Math.hypot(vs[0].x-vs[1].x,vs[0].y-vs[1].y);
+    if(lastPinch)zoomAt((vs[0].x+vs[1].x)/2,(vs[0].y+vs[1].y)/2,dist/lastPinch);
+    lastPinch=dist;
+    dragDist=99;
+  }
+});
+canvas.addEventListener('pointerup',e=>{
+  const wasPinch=ptrs.size>=2;
+  ptrs.delete(e.pointerId);
+  if(ptrs.size<2)lastPinch=0;
+  if(wasPinch)return;
+  if(dragDist<8&&started&&!S.won&&e.button!==2){
+    const t2=screenToTile(e.clientX,e.clientY);
+    if(tool==='del')demolish(t2.x,t2.y);
+    else if(tool)place(tool,t2.x,t2.y);
+    else selectedB=cellAt(t2.x,t2.y)?.b||null;
+  }
+});
+canvas.addEventListener('pointercancel',e=>{ptrs.delete(e.pointerId);lastPinch=0;});
+canvas.addEventListener('contextmenu',e=>{
+  e.preventDefault();
+  if(!started||S.won)return;
+  const t2=screenToTile(e.clientX,e.clientY);
+  demolish(t2.x,t2.y);
+});
+canvas.addEventListener('wheel',e=>{
+  e.preventDefault();
+  zoomAt(e.clientX,e.clientY,e.deltaY<0?1.12:0.89);
+},{passive:false});
+function zoomAt(px2,py2,f){
+  const nz=Math.max(0.6,Math.min(2.6,cam.z*f));
+  f=nz/cam.z;
+  cam.x=px2-(px2-cam.x)*f;
+  cam.y=py2-(py2-cam.y)*f;
+  cam.z=nz;
+}
+const keys=new Set();
+addEventListener('keydown',e=>{
+  const k=e.key.toLowerCase();
+  if(k===' '){S.paused=!S.paused;updSpeedBtns();e.preventDefault();}
+  else if(k==='f'){S.speed=S.speed===1?3:1;updSpeedBtns();}
+  else if(k==='escape'){document.querySelectorAll('.modal.open').forEach(m=>hideModal(m.id));tool=null;refreshPalette();showToolInfo();}
+  else if(k==='h')toggleHelp();
+  else if(k==='g')showModal('guide');
+  else if(/^[0-9]$/.test(k)){
+    const idx=k==='0'?9:parseInt(k)-1;
+    const kk=Object.keys(BD)[idx];
+    if(kk&&S.unlocked.has(kk)){activeCat=CAT_OF[kk];tool=tool===kk?null:kk;if(tool)focusNearestValid(tool);refreshPalette();showToolInfo();}
+  }
+  else keys.add(k);
+});
+addEventListener('keyup',e=>keys.delete(e.key.toLowerCase()));
+function toggleHelp(){
+  const h=document.getElementById('help');
+  h.style.display=h.style.display==='block'?'none':'block';
+}
+document.getElementById('btn_pause').addEventListener('click',()=>{S.paused=!S.paused;updSpeedBtns();});
+document.getElementById('btn_speed').addEventListener('click',()=>{S.speed=S.speed===1?3:1;updSpeedBtns();});
+document.getElementById('btn_help').addEventListener('click',toggleHelp);
+document.getElementById('btn_guide').addEventListener('click',()=>showModal('guide'));
+document.getElementById('btn_save').addEventListener('click',()=>{saveGame(false);openSavePanel(false);});
+document.getElementById('btn_load').addEventListener('click',()=>openSavePanel(true));
+document.getElementById('btn_sound').addEventListener('click',()=>{S.sound=!S.sound;document.getElementById('btn_sound').textContent=S.sound?'♪':'×';if(S.sound)playTone('save');});
+document.querySelectorAll('[data-close]').forEach(b=>b.addEventListener('click',()=>hideModal(b.dataset.close)));
+document.getElementById('copy_save').addEventListener('click',async()=>{const txt=document.getElementById('save_text').value;try{await navigator.clipboard.writeText(txt);toast('Portable save copied','un');}catch(_){document.getElementById('save_text').select();toast('Select and copy the save code','tip');}});
+document.getElementById('import_save').addEventListener('click',()=>loadGame(document.getElementById('save_text').value.trim()));
+document.querySelectorAll('.ovbtn[data-ov]').forEach(b=>b.addEventListener('click',()=>{S.overlay=b.dataset.ov;document.querySelectorAll('.ovbtn[data-ov]').forEach(x=>x.classList.toggle('on',x.dataset.ov===S.overlay));}));
+document.getElementById('ops_toggle').addEventListener('click',()=>{const o=document.getElementById('ops');o.classList.toggle('compact');document.getElementById('ops_toggle').textContent=o.classList.contains('compact')?'+':'−';});
+function updSpeedBtns(){
+  document.getElementById('btn_pause').textContent=S.paused?'▶':'⏸';
+  document.getElementById('btn_speed').textContent='»'+S.speed+'×';
+}
+document.getElementById('startbtn').addEventListener('click',()=>{
+  document.getElementById('overlay').style.display='none';
+  started=true;
+  lastAutoSave=S.time;
+  toast(LEVELS[0].t,'tip');
+  try{if(localStorage.getItem('silicon-dawn-v2'))toast('Previous autosave available with the ↑ load button','un');}catch(_){}
+});
+
+/* ================= main loop ================= */
+let last=performance.now(),lastAutoSave=0;
+function frame(now){
+  const dt=Math.min(0.1,(now-last)/1000);
+  last=now;
+  const pan=520*dt;
+  if(keys.has('w')||keys.has('arrowup'))cam.y+=pan;
+  if(keys.has('s')||keys.has('arrowdown'))cam.y-=pan;
+  if(keys.has('a')||keys.has('arrowleft'))cam.x+=pan;
+  if(keys.has('d')||keys.has('arrowright'))cam.x-=pan;
+  hover=screenToTile(mouse.x,mouse.y);
+  if(started&&!S.paused&&!S.won)for(let i=0;i<S.speed;i++)sim(dt);
+  if(started&&!S.paused&&!S.won)spawnParts(dt*S.speed);
+  if(started&&S.time-lastAutoSave>=30){saveGame(true);lastAutoSave=S.time;}
+  updParts(dt);
+  draw(now/1000);
+  uiTick(now);
+  requestAnimationFrame(frame);
+}
+
+/* ================= init ================= */
+buildSprites();
+buildPalette();
+showToolInfo();
+updSpeedBtns();
+cam.x=W/2;
+cam.y=H/2-N*(TH/2)*cam.z;
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
