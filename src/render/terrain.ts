@@ -211,7 +211,7 @@ export function buildProps(w: World): PropLayer {
   for (const k of Object.keys(counts)) {
     const kk = +k;
     const im = new THREE.InstancedMesh(kinds[kk].geo, kinds[kk].mat, counts[kk]);
-    im.castShadow = true; im.receiveShadow = true;
+    im.castShadow = kk === PROP.TREE || kk === PROP.PINE; im.receiveShadow = true;
     meshes[kk] = im; used[kk] = 0; group.add(im);
   }
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3();
@@ -254,7 +254,7 @@ export function buildProps(w: World): PropLayer {
     [DEPOSIT.RARE]: new THREE.InstancedMesh(crystalGeo, rareMat, depCounts[3] * 3),
   };
   const depUsed = [0, 0, 0, 0];
-  for (const k of [1, 2, 3]) { depMeshes[k].castShadow = true; group.add(depMeshes[k]); }
+  for (const k of [1, 2, 3]) { depMeshes[k].castShadow = false; group.add(depMeshes[k]); }
   for (let y = 0; y < w.size; y++) for (let x = 0; x < w.size; x++) {
     const i = idx(w, x, y), d = w.deposit[i];
     if (!d) continue;

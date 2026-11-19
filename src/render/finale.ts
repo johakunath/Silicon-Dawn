@@ -50,8 +50,8 @@ export class FinaleFX {
     this.uniforms.uI.value = this.intensity;
     const s = 1 + Math.sin(now * 2) * 0.05 + finale * 0.8;
     this.column.scale.set(s, 1, s);
-    (this.halo.material as THREE.MeshBasicMaterial).opacity = this.intensity * 0.6;
-    this.halo.scale.setScalar(1 + ((now * 0.6) % 1) * 3);
+    (this.halo.material as THREE.MeshBasicMaterial).opacity = this.intensity * 0.35 * (1 - ((now * 0.6) % 1));
+    this.halo.scale.setScalar(0.6 + ((now * 0.6) % 1) * 1.4);
     if (finale > 0) {
       // expanding flash wave across the base: radius grows to ~90 tiles over the first 30% of the finale
       this.wave.r = finale < 0.35 ? (finale / 0.35) * 90 : -1;

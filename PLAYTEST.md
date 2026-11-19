@@ -27,6 +27,22 @@ Method: each milestone has three checks. (1) A real-input run in headless Edge (
 | Era 5 rendered black | **Broken** | A zero-length link segment produced a NaN quaternion, which bloom smeared across the screen. Guarded, and water fresnel and the column `pow()` are clamped too. |
 | The fiber cluster felt like "just more cables" | Flat | Cluster sync: fiber pulses in unison while training runs. |
 
+## M4 (final pass)
+
+| Finding | Type | Action |
+|---|---|---|
+| The stress benchmark showed a 94 ms p95 | Perf (measurement) | The spikes were shader-compile warmup inside the window. After warmup, 677 buildings run at a 11.7 ms median and 14.4 ms p95 |
+| 677 buildings ran at a ~15 ms median, close to the 60 fps limit | Perf | Shadow map 3072, and only trees and pines cast prop shadows, which gives 85 fps median |
+| The aurora drew scanline stripes across the whole screen | Visual | Smoother bands, limited to the top 40% of the frame |
+| The finale halo disc looked like a flat plate | Visual | It is smaller and fades out as it expands |
+| Real-input Era 1 replay: placement tips, deposit coverage, auto-link | ✓ | No console errors, and the flow works through the actual UI |
+
+## Needs human playtesting
+- **Total campaign length** (target 2–3 h) and the per-era pace, especially the Era 1 waiting phase and the Era 5 charge time.
+- **Event difficulty** on Relaxed, Standard and Race: are heatwaves and grid faults scary but fair?
+- **Clarity for newcomers:** link tool vs. auto-link, two-way Depots, and pod modes.
+- **Feel:** sound mix levels, camera speed and zoom limits on a 27-inch or larger monitor.
+
 ## Remaining observations (not fixed yet)
 
 - **Slow:** in Era 1, the stretch between first chain and stockpile goal is a waiting game at 1×. 2× and 4× speed help, and the next objective hint points at "scale up". A later pass could add a mid-goal such as "build a second smelter".

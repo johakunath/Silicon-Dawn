@@ -82,12 +82,36 @@ if (scenario === 'stress') {
     g.paused = false; g.speed = 1; g.settings.showFps = true; g.applySettings();
     const t: number[] = [];
     const cpu: number[] = [];
+    await new Promise<void>((res) => { let n = 0; const w = () => { if (++n < 90) requestAnimationFrame(w); else res(); }; requestAnimationFrame(w); }); // warm-up (shader compiles)
     await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); cpu.push(g.frameMs); last = now; if (++n < 300) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
     t.sort((a, b) => a - b);
     return { buildings: g.s.buildings.length, links: g.s.links.length, medianMs: t[150].toFixed(2), p95Ms: t[285].toFixed(2), fpsMedian: (1000 / t[150]).toFixed(0), cpuMs: g.frameMs.toFixed(2) };
   });
+  if (process.env.PROFILE) {
+    out.profile = await page.evaluate(async () => {
+      const g = (window as any).__sd;
+      const sim: any = await import(/* @vite-ignore */ '/src/sim/sim.ts' as string);
+      const stats: Record<string, number[]> = {};
+      const wrap = (obj: any, key: string, name: string) => { const o = obj[key].bind(obj); obj[key] = (...a: any[]) => { const t = performance.now(); const r = o(...a); (stats[name] ??= []).push(performance.now() - t); return r; }; };
+      wrap(g.view, 'update', 'view');
+      wrap(g.hud, 'update', 'hud');
+      wrap(g.rig, 'render', 'render');
+      wrap(g.view.buildings, 'update', 'buildings');
+      wrap(g.view.links, 'update', 'links');
+      wrap(g.view, 'refreshOverlay', 'overlay');
+      wrap(g.view.particles, 'update', 'particles');
+      const so = g.s; let steps: number[] = []; const st0 = sim.step;
+      const frameT: number[] = [];
+      for (let i = 0; i < 400; i++) { const t = performance.now(); const a = performance.now(); g.tickFrame(1 / 60); frameT.push(performance.now() - t); void a; }
+      void so; void steps; void st0;
+      const summ = (arr: number[]) => { const s2 = [...arr].sort((a, b) => a - b); return `n${arr.length} med ${s2[Math.floor(s2.length / 2)].toFixed(2)} max ${s2[s2.length - 1].toFixed(1)} sum ${arr.reduce((a, b) => a + b, 0).toFixed(0)}`; };
+      const o: Record<string, string> = { frame: summ(frameT) };
+      for (const [k, v] of Object.entries(stats)) o[k] = summ(v);
+      return o;
+    });
+  }
   if (process.env.PERFBISECT) {
-    const measure = () => page.evaluate(async () => { const t: number[] = []; await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); last = now; if (++n < 120) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); }); t.sort((a, b) => a - b); return t[60].toFixed(1); });
+    const measure = () => page.evaluate(async () => { const t: number[] = []; await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); last = now; if (++n < 120) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); }); t.sort((a, b) => a - b); return t[60].toFixed(1) + " / p95 " + t[114].toFixed(1); });
     const v: Record<string, string> = { base: await measure() };
     await page.evaluate(() => { (document.querySelector('#badges') as HTMLElement).style.display = 'none'; });
     v.noBadges = await measure();

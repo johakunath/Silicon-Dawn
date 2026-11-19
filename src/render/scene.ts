@@ -42,8 +42,8 @@ const GradeShader = {
         float x = vUv.x;
         float band = 0.5 + 0.5 * sin(x * 7.0 + uT * 0.35 + sin(x * 17.0 + uT * 0.9) * 0.9);
         float band2 = 0.5 + 0.5 * sin(x * 11.0 - uT * 0.25 + 1.7);
-        float top = smoothstep(0.45, 1.0, vUv.y);
-        float curtain = top * band * (0.6 + 0.4 * sin(vUv.y * 40.0 + x * 9.0 + uT * 2.0));
+        float top = smoothstep(0.62, 1.0, vUv.y);
+        float curtain = top * band * (0.7 + 0.3 * sin(vUv.y * 5.0 + x * 3.0 + uT * 0.6));
         col += vec3(0.15, 1.0, 0.55) * curtain * uAurora * 0.35 + vec3(0.65, 0.3, 1.0) * top * band2 * band2 * uAurora * 0.25;
       }
       // event grading: rgb tint & strength (heatwave warm, dust brown, outage flicker)
@@ -91,7 +91,7 @@ export class SceneRig {
     this.scene.background = new THREE.Color('#bfe3ff');
     this.scene.fog = new THREE.Fog('#bfe3ff', 150, 420);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(4096, 4096);
+    this.sun.shadow.mapSize.set(3072, 3072);
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target, this.moon, this.moon.target, this.hemi);
