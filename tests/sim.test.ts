@@ -213,6 +213,32 @@ describe('autoplayer', () => {
     expect(r.problems).toEqual([]);
     expect(r.eraReached).toBeGreaterThanOrEqual(3);
   });
+  it('finishes the whole campaign (all 5 eras, engine ignites) on the campaign seed', () => {
+    const s = createState(SEED);
+    const r = autoplay(s, 5, 4 * 3600);
+    expect(r.problems).toEqual([]);
+    expect(s.flags.campaignDone).toBe(true);
+    expect(s.engine.ignited).toBe(true);
+    expect(s.eraScores.length).toBe(5);
+  }, 60000);
+  it('storage ships stockpiled goods to consumers', () => {
+    const s = createState(SEED);
+    s.stock = { metal: 500, silicon: 500 };
+    const h = hq(s);
+    const [x, y] = findSpot(s, 'smelter', h.x + 5, h.y);
+    const sm = place(s, 'furnace', x, y, { autoLink: false })!;
+    void sm;
+    s.era = 2;
+    const [fx, fy] = findSpot(s, 'fab', h.x - 5, h.y, 8);
+    const fab = place(s, 'fab', fx, fy, { autoLink: false })!;
+    expect(checkLink(s, h.id, fab.id).item).toBe('silicon');
+    addLink(s, h.id, fab.id);
+    expect(checkLink(s, h.id, fab.id).item).toBe('metal');
+    addLink(s, h.id, fab.id);
+    run(s, 5);
+    expect(fab.inBuf.silicon!).toBeGreaterThan(1);
+    expect(fab.inBuf.metal!).toBeGreaterThan(1);
+  });
   it('works on a second seed', () => {
     const s = createState(4242);
     const r = autoplay(s, 2, 3 * 3600);

@@ -123,10 +123,17 @@ export function accepts(d: BuildingDef, item: ItemId): boolean {
   return !!(d.storage?.includes(item) || d.inputs?.[item] !== undefined);
 }
 
-/** item that can flow from a to b (first match), or null */
-export function linkItem(a: Building, b: Building): ItemId | null {
+/** item that can flow from a to b (first match), or null. Storage (Core/Depot) ships stockpiled solids to consumers. */
+export function linkItem(a: Building, b: Building, s?: GameState): ItemId | null {
   const da = BUILDING[a.type], db = BUILDING[b.type];
   for (const it of Object.keys(da.outputs ?? {}) as ItemId[]) if (accepts(db, it)) return it;
+  if (da.storage && !db.storage) {
+    for (const it of Object.keys(db.inputs ?? {}) as ItemId[]) {
+      if (!da.storage.includes(it)) continue;
+      if (s && s.links.some((l) => l.from === a.id && l.to === b.id && l.item === it)) continue;
+      return it;
+    }
+  }
   return null;
 }
 
@@ -148,13 +155,14 @@ export function linkCost(kind: LinkKind, length: number): Cost {
 export function checkLink(s: GameState, fromId: number, toId: number): LinkCheck {
   const a = s.byId.get(fromId), b = s.byId.get(toId);
   if (!a || !b || a === b) return { ok: false, reason: 'Pick two different buildings' };
-  const item = linkItem(a, b);
+  const item = linkItem(a, b, s);
   if (!item) {
     const outs = Object.keys(BUILDING[a.type].outputs ?? {});
+    if (BUILDING[a.type].storage) return { ok: false, reason: s.links.some((l) => l.from === a.id && l.to === b.id) ? 'Already linked' : `${BUILDING[b.type].name} needs nothing from the stockpile` };
     if (!outs.length) return { ok: false, reason: `${BUILDING[a.type].name} has no output` };
     return { ok: false, reason: `${BUILDING[b.type].name} does not accept ${outs.map((o) => ITEMS[o as ItemId].name.toLowerCase()).join('/')}` };
   }
-  if (s.links.some((l) => l.from === fromId && l.to === toId)) return { ok: false, reason: 'Already linked' };
+  if (s.links.some((l) => l.from === fromId && l.to === toId && l.item === item)) return { ok: false, reason: 'Already linked' };
   const kind = linkKindFor(s, item);
   const length = buildingDist(s, a, b);
   if (length > LINKS[kind].maxLength) return { ok: false, reason: `Too far for ${LINKS[kind].name.toLowerCase()} (max ${LINKS[kind].maxLength})`, item, kind, length };
@@ -220,7 +228,6 @@ export function autoLink(s: GameState, b: Building) {
   }
   // inputs ← nearest producer that has spare output (unlinked or linked only to storage)
   for (const item of Object.keys(d.inputs ?? {}) as ItemId[]) {
-    if (d.workload === 'engine' && item === 'accel') continue;
     const kind = linkKindFor(s, item);
     const max = LINKS[kind].maxLength;
     const cands: [number, Building][] = [];
@@ -234,6 +241,15 @@ export function autoLink(s: GameState, b: Building) {
       const onlyStorage = outs.every((l) => !!BUILDING[s.byId.get(l.to)!.type].storage);
       if (outs.length && !onlyStorage && !od.it && !od.passthrough) continue;
       cands.push([dd + (outs.length ? 3 : 0), o]);
+    }
+    if (!cands.length && ITEMS[item].kind === 'solid') {
+      // fall back to the nearest Core/Depot that can ship it from the stockpile
+      for (const o of s.buildings) {
+        const od = BUILDING[o.type];
+        if (!od.storage?.includes(item)) continue;
+        const dd = dist(o);
+        if (dd <= max) cands.push([dd + 10, o]);
+      }
     }
     cands.sort((p, q) => p[0] - q[0]);
     // compute sinks/switches gather from several producers

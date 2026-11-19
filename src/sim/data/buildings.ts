@@ -7,7 +7,7 @@ export const BUILDINGS: BuildingDef[] = [
   // ───────── Era 1 · Sand ─────────
   {
     id: 'hq', name: 'Command Core', short: 'Your base. Stores delivered materials.', era: 1, cat: 'core', size: 3,
-    desc: 'The heart of the colony. Accepts every solid material by conveyor and adds it to your stockpile. It has a small built-in generator and a power node.',
+    desc: 'The heart of the colony. Refined goods delivered by belt join your stockpile, and links out of it ship stockpiled goods to consumers. It has a small built-in generator and a power node.',
     cost: {}, power: 6, gen: 'core', node: { radius: 6, reach: 10 }, storage: SOLIDS, unique: true,
   },
   {
@@ -46,8 +46,8 @@ export const BUILDINGS: BuildingDef[] = [
     cost: { metal: 14, silicon: 8 }, power: 0, battery: { capacity: 300, rate: 10 }, node: { radius: 2.5, reach: 4 },
   },
   {
-    id: 'depot', name: 'Depot', short: 'Remote drop-off for materials', era: 1, cat: 'logistics', size: 2, hotkey: '8',
-    desc: 'A second delivery point for your stockpile, so long conveyors back to the Core are not needed.',
+    id: 'depot', name: 'Supply Depot', short: 'Drop-off & pickup for the stockpile', era: 1, cat: 'logistics', size: 2, hotkey: '8',
+    desc: 'An outpost of your stockpile. Belts can deliver refined goods into it, and you can link it out to any building that needs stockpiled materials (it keeps a small reserve).',
     cost: { metal: 16 }, power: 0, storage: SOLIDS,
   },
 
@@ -124,7 +124,7 @@ export const BUILDINGS: BuildingDef[] = [
   {
     id: 'accfab', name: 'Accelerator Fab', short: 'Chips + rare earth → accelerators', era: 4, cat: 'refine', size: 3,
     desc: 'Advanced packaging. It stacks chips, high-bandwidth memory and rare-earth magnets into AI accelerators.',
-    cost: { metal: 120, silicon: 60, chips: 60 }, power: -20, inputs: { chips: 0.3, rare: 0.2, water: 0.6 }, outputs: { accel: 0.12 },
+    cost: { metal: 120, silicon: 60, chips: 60 }, power: -20, inputs: { chips: 0.3, rare: 0.2 }, outputs: { accel: 0.12 },
   },
   {
     id: 'pod', name: 'Accelerator Pod', short: '+40 compute; mode-tunable', era: 4, cat: 'compute', size: 2,

@@ -61,10 +61,13 @@ export class AutoPlayer {
   powerUp(b: Building) {
     const s = this.s;
     const d = BUILDING[b.type];
-    for (let tries = 0; tries < 4; tries++) {
-      if (coveredAt(s, b.x, b.y, d.size)) return;
-      // find nearest node
-      const nodes = s.buildings.filter((n) => BUILDING[n.type].node);
+    const main = () => { rebuildGrids(s); return hq(s).grid; };
+    for (let tries = 0; tries < 6; tries++) {
+      rebuildGrids(s);
+      if (coveredAt(s, b.x, b.y, d.size) && b.grid === main()) return;
+      // find nearest node already on the main grid
+      const mg = main();
+      const nodes = s.buildings.filter((n) => BUILDING[n.type].node && n.grid === mg && n !== b);
       let best: Building | null = null, bd = Infinity;
       for (const n of nodes) { const dd = Math.hypot(n.x - b.x, n.y - b.y); if (dd < bd) { bd = dd; best = n; } }
       if (!best) return;
@@ -74,6 +77,7 @@ export class AutoPlayer {
       const tx = b.x + d.size / 2, ty = b.y + d.size / 2;
       const len = Math.hypot(tx - nx, ty - ny);
       const reach = Math.min(nd.node!.reach, 9) - 1;
+      if (len < 2) return;
       const t = Math.min(1, reach / len);
       const px = Math.round(nx + (tx - nx) * t), py = Math.round(ny + (ty - ny) * t);
       const spot = spiral(px, py, 3, (x, y) => checkPlace(s, 'pole', x, y).ok && Math.hypot(x + 0.5 - nx, y + 0.5 - ny) <= Math.min(nd.node!.reach, 9));
@@ -99,11 +103,12 @@ export class AutoPlayer {
     const avail = TECHS.filter((t) => canResearch(s, t.id).ok).sort((a, b) => a.cost - b.cost);
     if (avail.length) research(s, avail[0].id);
 
+    if (s.era >= 5 && n('engine') < 1) { this.build('engine', cx - 14, cy + 12, 26); if (n('engine') < 1) return; }
     // ── power baseline ──
     if (gen < demand * 1.5 + 4) {
       if (s.era >= 4 && s.techs.includes('fusion') && n('fusion') < 2) this.build('fusion', cx + 8, cy - 8, 30);
       else if (s.era >= 4 && n('wind') < 14) this.build('wind', cx - 10, cy - 10, 30);
-      else if (s.era >= 3 && n('gas') < 4) this.build('gas', cx + 6, cy + 10, 24);
+      else if (s.era >= 3 && n('gas') < (s.era >= 4 ? 12 : 4)) this.build('gas', cx + 6, cy + 10, 26);
       else this.build('solar', cx, cy, 16);
     }
     if (n('battery') < Math.min(6, 1 + Math.floor(n('solar') / 2))) this.build('battery', cx - 3, cy + 4, 14);
@@ -134,7 +139,10 @@ export class AutoPlayer {
     // ── era 2: chips, racks, lab, cooling ──
     if (s.era >= 2) {
       if (n('pump') < 2) this.build('pump', cx + 9, cy - 6, 20);
-      if (n('fab') < (s.era >= 3 ? 2 : 1) && n('pump') > 0) this.build('fab', cx + 6, cy - 4, 14);
+      if (n('fab') < (s.era >= 4 ? 5 : s.era >= 3 ? 2 : 1) && n('pump') > 0) {
+        const f = this.build('fab', cx + 6, cy - 4, 18);
+        if (f) { this.feedFrom(f, 'water'); }
+      }
       if (n('lab') < 1 && n('fab') > 0) this.build('lab', cx - 6, cy - 6, 12);
       if (n('cooler') < Math.ceil(n('rack') / 6) && n('pump') > 0) {
         const c = this.build('cooler', cx - 4, cy - 9, 14);
@@ -169,30 +177,35 @@ export class AutoPlayer {
     }
     // ── era 4 ──
     if (s.era >= 4) {
-      if (n('raremine') < 2) {
-        const p = nearestDeposit(s, DEPOSIT.RARE, cx, cy);
-        if (p) this.build('raremine', p[0] + 0.5, p[1] + 0.5, 4, (x, y) => checkPlace(s, 'raremine', x, y).richness! >= 0.5);
-      }
-      if (n('accfab') < 1 && n('raremine') > 0) {
-        const r = this.near('raremine')!;
-        const a = this.build('accfab', (r.x + cx) / 2, (r.y + cy) / 2, 12);
-        if (a) { this.feedFrom(a, 'water'); this.feedFrom(a, 'chips'); }
+      const rp = nearestDeposit(s, DEPOSIT.RARE, cx, cy);
+      if (n('raremine') < 2 && rp) this.build('raremine', rp[0] + 0.5, rp[1] + 0.5, 4, (x, y) => checkPlace(s, 'raremine', x, y).richness! >= 0.5);
+      const rm = this.near('raremine');
+      if (rm) {
+        if (!s.buildings.some((b) => b.type === 'depot' && Math.hypot(b.x - rm.x, b.y - rm.y) < 9)) this.build('depot', rm.x + 2, rm.y + 3, 6);
+        if (n('accfab') < 2) {
+          const a = this.build('accfab', rm.x + 1, rm.y - 3, 8);
+          if (a) { for (const m of s.buildings.filter((b) => b.type === 'raremine')) this.sendTo(m, a); }
+        }
       }
       if (n('switch') < 2 && s.techs.includes('fiber')) {
         const t = this.near('trainer');
         if (t) { const sw = this.build('switch', t.x - 2, t.y - 2, 6); if (sw) this.sendTo(sw, t); }
       }
-      if (n('pod') < 8 && (s.stock.accel ?? 0) >= 4) {
-        const sw = s.buildings.find((b) => b.type === 'switch') ?? this.near('trainer');
-        if (sw) { const p = this.build('pod', sw.x + 2, sw.y + 2, 12); if (p) { this.feedFrom(p, 'coolant'); this.sendTo(p, sw); } }
+      if (n('pod') < 10 && (s.stock.accel ?? 0) >= 4) {
+        const sws = s.buildings.filter((b) => b.type === 'switch');
+        const sw = sws[n('pod') % Math.max(1, sws.length)] ?? this.near('trainer');
+        if (sw) { const p = this.build('pod', sw.x + 2, sw.y + 2, 12); if (p) { p.mode = 'training'; this.feedFrom(p, 'coolant'); this.sendTo(p, sw); } }
       }
+      if (s.techs.includes('robots') && n('robofab') < 1) this.build('robofab', cx + 4, cy - 10, 16);
     }
     if (s.era >= 5) {
       if (n('engine') < 1) this.build('engine', cx - 14, cy + 12, 26);
       const e = this.near('engine');
       if (e) {
         if (!s.links.some((l) => l.to === e.id && l.item === 'accel')) {
-          const af = this.near('accfab'); if (af) { const c = checkLink(s, af.id, e.id); if (c.ok) addLink(s, af.id, e.id); }
+          let dp = s.buildings.find((b) => b.type === 'depot' && Math.hypot(b.x - e.x, b.y - e.y) < 10);
+          if (!dp) dp = this.build('depot', e.x + 5, e.y + 1, 6) ?? undefined;
+          if (dp) { const c = checkLink(s, dp.id, e.id); if (c.ok) addLink(s, dp.id, e.id); }
         }
         if (n('pod') < 16 && (s.stock.accel ?? 0) >= 4) { const p = this.build('pod', e.x + 3, e.y - 2, 12); if (p) { this.feedFrom(p, 'coolant'); this.sendTo(p, e); } }
         const halls = s.buildings.filter((b) => (b.type === 'hall' || b.type === 'pod') && !s.links.some((l) => l.from === b.id && l.to === e.id));

@@ -371,7 +371,8 @@ export function step(s: GameState) {
       const f = Math.min(1, have / need);
       if (f < r) { r = f; if (f < 0.999) { statusItem = it; } }
     }
-    if (r < 0.999 && statusItem) status = 'no_input';
+    if (r < 0.2 && statusItem) status = 'no_input';
+    else if (r < 0.999) statusItem = statusItem; // input-limited but running: shown in inspector via activity
     let full = false;
     for (const [it, rate] of outs) {
       const space = outputCap(d, it) - (b.outBuf[it] ?? 0);
@@ -461,6 +462,28 @@ export function step(s: GameState) {
       src.outBuf[item] = Math.max(0, avail);
       if (item === 'compute') src.outBuf.compute = 0; // compute can't be stored
       void sd;
+    }
+  }
+  // storage → consumer shipments from the stockpile
+  for (const src of B) {
+    const sd = BUILDING[src.type];
+    if (!sd.storage) continue;
+    const ls = OI.get(src.id);
+    if (!ls) continue;
+    for (const l of ls) {
+      const dst = s.byId.get(l.to);
+      if (!dst || dst.broken > 0) { l.state = 'blocked'; continue; }
+      const dd = BUILDING[dst.type];
+      const have = s.stock[l.item] ?? 0;
+      const space = Math.max(0, inputCap(s, dd, l.item) - (dst.inBuf[l.item] ?? 0));
+      const cap = linkCapacity(s, l) * TICK;
+      // keep a small reserve so the stockpile is never fully drained by belts
+      const mv = Math.max(0, Math.min(cap, space, have - 5));
+      if (mv <= 1e-9) { l.state = space <= 1e-9 ? 'blocked' : 'idle'; continue; }
+      s.stock[l.item] = have - mv;
+      dst.inBuf[l.item] = (dst.inBuf[l.item] ?? 0) + mv;
+      l.moved = mv; l.total += mv;
+      l.state = mv >= cap * 0.97 ? 'saturated' : 'ok';
     }
   }
   const a = dt / 1.5;
