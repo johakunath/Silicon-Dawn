@@ -3,9 +3,9 @@
   "configurations": [
     {
       "name": "silicon-dawn",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8321"],
-      "port": 8321
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
     }
   ]
 }
