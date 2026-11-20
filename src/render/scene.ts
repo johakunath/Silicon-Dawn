@@ -95,7 +95,8 @@ export class SceneRig {
     this.sun.shadow.bias = -0.0004;
     this.sun.shadow.normalBias = 0.03;
     this.scene.add(this.sun, this.sun.target, this.moon, this.moon.target, this.hemi);
-    this.composer = new EffectComposer(this.renderer);
+    const rt = new THREE.WebGLRenderTarget(window.innerWidth, window.innerHeight, { samples: 4, type: THREE.HalfFloatType });
+    this.composer = new EffectComposer(this.renderer, rt);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
     this.bloom = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.6, 0.55, 0.82);
     this.composer.addPass(this.bloom);
@@ -132,10 +133,10 @@ export class SceneRig {
   }
 
   /** tod 0..1 (0 = midnight, .5 = noon) */
-  setTimeOfDay(tod: number, era: number, auroraBoost = 0) {
+  setTimeOfDay(tod: number, era: number, auroraBoost = 0, bias = 0) {
     const g = ERA_GRADE[era] ?? ERA_GRADE[1];
     const ang = (tod - 0.25) * Math.PI * 2;
-    const elev = Math.sin(ang);
+    const elev = Math.sin(ang) + bias;
     const day = THREE.MathUtils.smoothstep(elev, -0.12, 0.22);
     this.night = 1 - day;
     // sun path: east → south → west

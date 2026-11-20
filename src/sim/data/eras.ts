@@ -64,7 +64,7 @@ export const ERAS: EraDef[] = [
     guide: ['fiction'],
     objectives: [
       { id: 'e5_build', text: 'Build the Dawn Engine', progress: (s) => has(s, 'engine'), hint: 'It is 4×4 and costs 400 metal, 200 chips and 40 accelerators.' },
-      { id: 'e5_feed', text: 'Charge the Dawn Engine to 100%', progress: (s) => s.engine.progress, hint: 'Pour compute into it over fiber, plus accelerators by conveyor.' },
+      { id: 'e5_feed', text: 'Charge the Dawn Engine to 100%', progress: (s) => (s.engine.ignited ? 1 : Math.min(0.99, s.engine.progress)), hint: 'Pour compute into it over fiber, plus accelerators by conveyor.' },
     ],
   },
 ];

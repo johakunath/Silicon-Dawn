@@ -5,15 +5,18 @@ import { EVENT, EVENTS } from './data/events';
 import { TECH } from './data/tech';
 import { rebuildGrids } from './power';
 import {
-  BASE_FX, GameState, TICK, diffMul, pushFeed, signal, sunlight, timeOfDay, windAt,
+  BASE_FX, GameState, TICK, dayBias, diffMul, pushFeed, signal, sunlight, timeOfDay, windAt,
 } from './state';
 import type { Building, BuildingDef, Contract, ItemId, Link } from './types';
 import { LINKS } from './data/items';
 
 export const ENGINE_TARGET = 160000;
+/** the stockpile never ships below this, so construction always has material */
+export const STORAGE_RESERVE = 40;
 
 // ───────── helpers ─────────
 export function inputCap(s: GameState, d: BuildingDef, item: ItemId): number {
+  if (d.junction) return 6;
   const r = d.inputs?.[item] ?? 0;
   if (item === 'compute') return r * TICK;
   return Math.max(2, r * 10) * s.fx.bufferMul;
@@ -93,7 +96,7 @@ export function step(s: GameState) {
   s.tick++;
   const m = mods(s);
   const tod = timeOfDay(s);
-  const sun = sunlight(tod);
+  const sun = sunlight(tod, dayBias(s));
   const wind = windAt(s);
   const B = s.buildings;
   if (want.length < B.length) want = new Float32Array(B.length * 2);
@@ -258,6 +261,18 @@ export function step(s: GameState) {
       else if (b.type === 'fusion') { b.status = b.activity < 0.5 ? 'no_input' : 'ok'; b.statusItem = 'water'; }
       else if (d.gen === 'firm' || d.gen === 'core') b.status = m.firmOff ? 'broken' : 'ok';
       else if (!d.battery) b.status = 'ok';
+      continue;
+    }
+    if (d.junction) {
+      let moved = 0;
+      for (const it of Object.keys(b.inBuf) as ItemId[]) {
+        const v = b.inBuf[it] ?? 0;
+        const space = 6 - (b.outBuf[it] ?? 0);
+        const mv = Math.max(0, Math.min(v, space));
+        b.inBuf[it] = v - mv; b.outBuf[it] = (b.outBuf[it] ?? 0) + mv; moved += mv;
+      }
+      b.activity = moved > 0 ? 1 : 0;
+      b.status = !(outLinks(s).get(b.id)?.length) && Object.keys(b.inBuf).length ? 'no_output_link' : 'ok';
       continue;
     }
     if (d.storage) {
@@ -426,7 +441,7 @@ export function step(s: GameState) {
         if (dst && dst.broken <= 0) {
           const dd = BUILDING[dst.type];
           if (dd.storage?.includes(item)) space = Infinity;
-          else if (dd.inputs?.[item] !== undefined || dd.passthrough) space = Math.max(0, inputCap(s, dd, item) - (dst.inBuf[item] ?? 0));
+          else if (dd.inputs?.[item] !== undefined || dd.passthrough || dd.junction) space = Math.max(0, inputCap(s, dd, item) - (dst.inBuf[item] ?? 0));
           if (item === 'compute' && dd.passthrough) space = Math.max(0, dd.passthrough * TICK - (dst.inBuf.compute ?? 0));
         }
         const cap = linkCapacity(s, l) * TICK;
@@ -478,7 +493,7 @@ export function step(s: GameState) {
       const space = Math.max(0, inputCap(s, dd, l.item) - (dst.inBuf[l.item] ?? 0));
       const cap = linkCapacity(s, l) * TICK;
       // keep a small reserve so the stockpile is never fully drained by belts
-      const mv = Math.max(0, Math.min(cap, space, have - 5));
+      const mv = Math.max(0, Math.min(cap, space, have - STORAGE_RESERVE));
       if (mv <= 1e-9) { l.state = space <= 1e-9 ? 'blocked' : 'idle'; continue; }
       s.stock[l.item] = have - mv;
       dst.inBuf[l.item] = (dst.inBuf[l.item] ?? 0) + mv;

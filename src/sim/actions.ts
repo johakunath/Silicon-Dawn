@@ -8,7 +8,7 @@ import { linksChanged, recomputeFx } from './sim';
 import type { Building, BuildingDef, Cost, ItemId, Link, LinkKind } from './types';
 import { DEPOSIT, idx, inBounds, isWaterAdjacent } from './world';
 
-export interface PlaceCheck { ok: boolean; reason?: string; richness?: number; cost: Cost }
+export interface PlaceCheck { ok: boolean; reason?: string; richness?: number; cost: Cost; platform?: number }
 
 export function eraRadius(s: GameState): number {
   return s.mode === 'sandbox' ? 64 : ERAS[s.era - 1].radius;
@@ -50,27 +50,34 @@ function pay(s: GameState, c: Cost) {
   for (const [k, v] of Object.entries(c) as [ItemId, number][]) s.stock[k] = (s.stock[k] ?? 0) - v;
 }
 
-export function checkPlace(s: GameState, type: string, x: number, y: number): PlaceCheck {
+export const PLATFORM_COST = 2; // metal per tile per terrace raised
+
+export function checkPlace(s: GameState, type: string, x: number, y: number, moving?: Building): PlaceCheck {
   const d = BUILDING[type];
-  const cost = costOf(s, d);
+  const cost: Cost = moving ? {} : costOf(s, d);
   const w = s.world;
   if (!isUnlocked(s, d)) return { ok: false, reason: lockReason(s, d) ?? 'Locked', cost };
-  if (d.unique && s.buildings.some((b) => b.type === type)) return { ok: false, reason: 'Only one can be built', cost };
+  if (!moving && d.unique && s.buildings.some((b) => b.type === type)) return { ok: false, reason: 'Only one can be built', cost };
   const h = hq(s);
   const hc = h.x + 1.5, hcY = h.y + 1.5;
   const R = eraRadius(s);
-  let lvl = -1, dep = 0, water = 0;
+  let lo = 99, hi = -1, dep = 0, water = 0;
+  const lv: number[] = [];
   for (let yy = y; yy < y + d.size; yy++) for (let xx = x; xx < x + d.size; xx++) {
     if (!inBounds(w, xx, yy)) return { ok: false, reason: 'Outside the map', cost };
     if (Math.hypot(xx + 0.5 - hc, yy + 0.5 - hcY) > R) return { ok: false, reason: 'Beyond the frontier (it expands next era)', cost };
     const i = idx(w, xx, yy);
-    if (s.occ[i]) return { ok: false, reason: 'Blocked by another building', cost };
+    if (s.occ[i] && s.occ[i] !== moving?.id) return { ok: false, reason: 'Blocked by another building', cost };
     const l = w.level[i];
     if (l === 0) water++;
-    if (lvl === -1) lvl = l; else if (l !== lvl) return { ok: false, reason: 'Needs flat ground (one terrace level)', cost };
+    lo = Math.min(lo, l); hi = Math.max(hi, l); lv.push(l);
     if (d.deposit && w.deposit[i] === d.deposit) dep++;
   }
   if (water > 0) return { ok: false, reason: 'Cannot build on water', cost };
+  if (hi - lo > 2) return { ok: false, reason: 'Too steep: a platform can level at most 2 terraces', cost };
+  let platform = 0;
+  for (const l of lv) platform += hi - l;
+  if (platform > 0 && !moving) cost.metal = (cost.metal ?? 0) + platform * PLATFORM_COST;
   let richness = 1;
   if (d.deposit) {
     if (dep === 0) {
@@ -80,8 +87,8 @@ export function checkPlace(s: GameState, type: string, x: number, y: number): Pl
     richness = dep / (d.size * d.size);
   }
   if (d.needsWater && !isWaterAdjacent(w, x, y, d.size)) return { ok: false, reason: 'Must be next to water (shoreline)', cost };
-  if (!canAfford(s, cost)) return { ok: false, reason: `Need ${missingCost(s, cost)}`, cost, richness };
-  return { ok: true, cost, richness };
+  if (!canAfford(s, cost)) return { ok: false, reason: `Need ${missingCost(s, cost)}`, cost, richness, platform };
+  return { ok: true, cost, richness, platform };
 }
 
 export function place(s: GameState, type: string, x: number, y: number, opts: { free?: boolean; autoLink?: boolean } = {}): Building | null {
@@ -100,8 +107,8 @@ export function demolish(s: GameState, id: number): boolean {
   const b = s.byId.get(id);
   if (!b || b.type === 'hq') return false;
   const d = BUILDING[b.type];
-  // refund: full if built < 15s ago, else half
-  const frac = s.time - b.built < 15 ? 1 : 0.5;
+  // full refund (Satisfactory-style): experimenting with layouts is never punished
+  const frac = 1;
   for (const [k, v] of Object.entries(costOf(s, d)) as [ItemId, number][]) s.stock[k] = (s.stock[k] ?? 0) + Math.floor(v * frac);
   for (const l of s.links.filter((l) => l.from === id || l.to === id)) removeLink(s, l.id, true);
   s.buildings.splice(s.buildings.indexOf(b), 1);
@@ -120,12 +127,22 @@ export function linkKindFor(s: GameState, item: ItemId): LinkKind {
 }
 
 export function accepts(d: BuildingDef, item: ItemId): boolean {
+  if (d.junction) return item !== 'compute';
   return !!(d.storage?.includes(item) || d.inputs?.[item] !== undefined);
+}
+
+/** items currently routed into a junction (from its incoming links) */
+export function junctionItems(s: GameState, j: Building): ItemId[] {
+  return [...new Set(s.links.filter((l) => l.to === j.id).map((l) => l.item))];
 }
 
 /** item that can flow from a to b (first match), or null. Storage (Core/Depot) ships stockpiled solids to consumers. */
 export function linkItem(a: Building, b: Building, s?: GameState): ItemId | null {
   const da = BUILDING[a.type], db = BUILDING[b.type];
+  if (da.junction && s) {
+    for (const it of junctionItems(s, a)) if (accepts(db, it) && !s.links.some((l) => l.from === a.id && l.to === b.id && l.item === it)) return it;
+    return null;
+  }
   for (const it of Object.keys(da.outputs ?? {}) as ItemId[]) if (accepts(db, it)) return it;
   if (da.storage && !db.storage) {
     for (const it of Object.keys(db.inputs ?? {}) as ItemId[]) {
@@ -158,6 +175,7 @@ export function checkLink(s: GameState, fromId: number, toId: number): LinkCheck
   const item = linkItem(a, b, s);
   if (!item) {
     const outs = Object.keys(BUILDING[a.type].outputs ?? {});
+    if (BUILDING[a.type].junction) return { ok: false, reason: junctionItems(s, a).length ? `${BUILDING[b.type].name} needs none of what this junction carries` : 'Feed something into the junction first' };
     if (BUILDING[a.type].storage) return { ok: false, reason: s.links.some((l) => l.from === a.id && l.to === b.id) ? 'Already linked' : `${BUILDING[b.type].name} needs nothing from the stockpile` };
     if (!outs.length) return { ok: false, reason: `${BUILDING[a.type].name} has no output` };
     return { ok: false, reason: `${BUILDING[b.type].name} does not accept ${outs.map((o) => ITEMS[o as ItemId].name.toLowerCase()).join('/')}` };
@@ -188,7 +206,7 @@ export function removeLink(s: GameState, id: number, silent = false) {
   if (i < 0) return;
   const l = s.links[i];
   if (!silent) {
-    for (const [k, v] of Object.entries(linkCost(l.kind, l.length)) as [ItemId, number][]) s.stock[k] = (s.stock[k] ?? 0) + Math.floor(v * 0.5);
+    for (const [k, v] of Object.entries(linkCost(l.kind, l.length)) as [ItemId, number][]) s.stock[k] = (s.stock[k] ?? 0) + v;
     signal(s, 'unlink');
   }
   s.links.splice(i, 1);
@@ -202,7 +220,10 @@ export function upgradeCablesToFiber(s: GameState) {
 }
 
 /** Auto-connect a freshly placed building to its nearest sensible partners. */
-export function autoLink(s: GameState, b: Building) {
+/** Auto-connect a building. With commit=false nothing changes: returns the links it would make (for previews). */
+export function autoLink(s: GameState, b: Building, commit = true): [number, number][] {
+  const planned: [number, number][] = [];
+  const add = (from: number, to: number) => { planned.push([from, to]); if (commit) addLink(s, from, to); };
   const d = BUILDING[b.type];
   const dist = (o: Building) => buildingDist(s, b, o);
   // outputs → nearest consumer (prefer non-storage consumers without a feeder of this item)
@@ -223,7 +244,7 @@ export function autoLink(s: GameState, b: Building) {
     }
     if (best) {
       const c = checkLink(s, b.id, best.id);
-      if (c.ok) addLink(s, b.id, best.id);
+      if (c.ok) add(b.id, best.id);
     }
   }
   // inputs ← nearest producer that has spare output (unlinked or linked only to storage)
@@ -261,9 +282,41 @@ export function autoLink(s: GameState, b: Building) {
       const od = BUILDING[o.type];
       if (item === 'compute' && (od.it || od.passthrough) && s.links.some((l) => l.from === o.id)) continue;
       const c = checkLink(s, o.id, b.id);
-      if (c.ok) { addLink(s, o.id, b.id); n++; }
+      if (c.ok) { add(o.id, b.id); n++; }
     }
   }
+  return planned;
+}
+
+/** Preview the auto-links a building would get if placed at (x,y), without changing state. */
+export function previewAutoLinks(s: GameState, type: string, x: number, y: number): [number, number][] {
+  const tmp = newBuilding(-1, type, x, y, s.time);
+  s.buildings.push(tmp); s.byId.set(-1, tmp);
+  try { return autoLink(s, tmp, false); } finally { s.buildings.pop(); s.byId.delete(-1); }
+}
+
+/** Move a building to a new spot (free). Links stay if still in range. */
+export function moveBuilding(s: GameState, id: number, x: number, y: number): boolean {
+  const b = s.byId.get(id);
+  if (!b || b.type === 'hq') return false;
+  const c = checkPlace(s, b.type, x, y, b);
+  if (!c.ok) return false;
+  const d = BUILDING[b.type];
+  const ox = b.x, oy = b.y;
+  for (let yy = b.y; yy < b.y + d.size; yy++) for (let xx = b.x; xx < b.x + d.size; xx++) s.occ[yy * s.world.size + xx] = 0;
+  b.x = x; b.y = y;
+  b.richness = c.richness ?? 1;
+  for (let yy = y; yy < y + d.size; yy++) for (let xx = x; xx < x + d.size; xx++) s.occ[yy * s.world.size + xx] = b.id;
+  for (const l of [...s.links]) {
+    if (l.from !== id && l.to !== id) continue;
+    const A = s.byId.get(l.from)!, B = s.byId.get(l.to)!;
+    l.length = buildingDist(s, A, B);
+    if (l.length > LINKS[l.kind].maxLength) removeLink(s, l.id, true);
+  }
+  linksChanged(s);
+  s.gridDirty = true;
+  signal(s, 'move', ox, oy, { id, type: b.type });
+  return true;
 }
 
 // ───────── research, contracts, misc ─────────

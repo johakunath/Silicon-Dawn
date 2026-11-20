@@ -146,6 +146,16 @@ const builders: Record<string, Builder> = {
     g.box(1.72, 0.06, 0.04, 0, 0.55, 0.86, G.amber);
     return { body: b.build()!, glow: g.build(), height: 1.7, emitters: [] };
   },
+  junction() {
+    const b = new GB(), g = new GB();
+    b.box(0.82, 0.1, 0.82, 0, 0, 0, C.concreteD);
+    b.cyl(0.32, 0.36, 0.42, 0, 0.1, 0, C.steel, 8);
+    b.cyl(0.36, 0.36, 0.06, 0, 0.52, 0, C.yellow, 8);
+    for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2; b.box(0.3, 0.12, 0.14, Math.cos(a) * 0.32, 0.22, Math.sin(a) * 0.32, C.steelD, -a); }
+    g.torus(0.3, 0.035, 0, 0.6, 0, G.amber);
+    g.sphere(0.07, 0, 0.66, 0, G.white);
+    return { body: b.build()!, glow: g.build(), height: 1.0, emitters: [] };
+  },
   pump() {
     const b = new GB(), g = new GB();
     foundation(b, 1);

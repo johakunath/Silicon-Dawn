@@ -16,6 +16,18 @@ const BIOME_COL: Record<number, [string, string]> = {
   [BIOME.ROCK]: ['#8f8273', '#a39484'],
 };
 
+/** base height for a footprint: the highest terrace under it (lower tiles get a platform) */
+export function baseHeight(w: World, x: number, y: number, size: number): number {
+  let m = -9;
+  for (let yy = y; yy < y + size; yy++) for (let xx = x; xx < x + size; xx++) m = Math.max(m, tileHeight(w, xx, yy));
+  return m;
+}
+export function minHeight(w: World, x: number, y: number, size: number): number {
+  let m = 99;
+  for (let yy = y; yy < y + size; yy++) for (let xx = x; xx < x + size; xx++) m = Math.min(m, tileHeight(w, xx, yy));
+  return m;
+}
+
 export function tileHeight(w: World, x: number, y: number): number {
   const l = w.level[idx(w, x, y)];
   return l === 0 ? SEABED_Y : l * LEVEL_H;
@@ -154,7 +166,7 @@ export function buildWater(w: World): { mesh: THREE.Mesh; uniforms: Record<strin
       uniform float uTime; uniform sampler2D uShore; uniform float uSize;
       uniform vec3 uSunDir; uniform vec3 uSunCol; uniform vec3 uDeep; uniform vec3 uShallow; uniform float uNight;
       varying vec3 vW;
-      float h(vec2 p){ return sin(p.x*2.1+uTime*1.7)*0.5+sin(p.y*1.7-uTime*1.3)*0.5+sin((p.x+p.y)*3.3+uTime*2.3)*0.25; }
+      float h(vec2 p){ p *= 2.6; return (sin(p.x*2.1+uTime*1.7)*0.5+sin(p.y*1.7-uTime*1.3)*0.5+sin((p.x+p.y)*3.3+uTime*2.3)*0.25 + sin(p.x*5.7-p.y*4.3+uTime*2.9)*0.15) * 0.45; }
       void main(){
         vec2 uv = vW.xz / uSize;
         float shore = texture2D(uShore, uv).r;
@@ -168,7 +180,7 @@ export function buildWater(w: World): { mesh: THREE.Mesh; uniforms: Record<strin
         float fres = pow(clamp(1.0 - dot(n,V), 0.0, 1.0), 3.0);
         vec3 col = base * (0.55 + 0.45*max(dot(n,uSunDir),0.0)) + uSunCol*spec + vec3(0.25,0.35,0.45)*fres*0.4;
         // shoreline foam bands
-        float band = sin(shore*22.0 - uTime*1.6 + h(p*0.5)*1.2);
+        float band = sin(shore*34.0 - uTime*1.6 + h(p*0.5)*1.2);
         float foam = smoothstep(0.86, 1.0, shore) * 0.9 + smoothstep(0.6,0.95,band)*smoothstep(0.55,0.9,shore)*0.45;
         col = mix(col, vec3(0.95,0.98,1.0) * (1.0 - uNight*0.6), clamp(foam,0.0,1.0));
         col *= mix(1.0, 0.35, uNight);

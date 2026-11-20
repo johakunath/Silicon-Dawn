@@ -3,7 +3,7 @@ import { BUILDING } from '../sim/data/buildings';
 import type { GameState } from '../sim/state';
 import type { Building } from '../sim/types';
 import { getModel } from './models';
-import { tileHeight } from './terrain';
+import { baseHeight, minHeight } from './terrain';
 
 interface TypeSlot {
   body: THREE.InstancedMesh;
@@ -29,13 +29,20 @@ export class BuildingLayer {
   private tmpS = new THREE.Vector3();
   private tmpC = new THREE.Color();
   private known = new Set<number>();
+  private plat!: THREE.InstancedMesh;
+  private platMat = new THREE.MeshStandardMaterial({ color: '#8d8a84', roughness: 0.85, metalness: 0.1, flatShading: true });
   private syncSig = -1;
   /** body tint callback (overlays/selection) */
   tint: ((b: Building) => THREE.Color | null) | null = null;
   reducedMotion = false;
+  hoverId = -1;
+  dangerId = -1;
 
   constructor(private s: GameState) {
     this.group.name = 'buildings';
+    this.plat = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), this.platMat, 1500);
+    this.plat.count = 0; this.plat.castShadow = true; this.plat.receiveShadow = true; this.plat.frustumCulled = false;
+    this.group.add(this.plat);
   }
 
   setState(s: GameState) {
@@ -113,13 +120,16 @@ export class BuildingLayer {
     if (t.glow) t.glow.count = t.ids.length;
     if (t.spin) t.spin.count = t.ids.length;
     t.body.instanceMatrix.needsUpdate = true;
+    if (t.glow) { t.glow.instanceMatrix.needsUpdate = true; if (t.glow.instanceColor) t.glow.instanceColor.needsUpdate = true; }
+    if (t.spin) t.spin.instanceMatrix.needsUpdate = true;
+    if (t.body.instanceColor) t.body.instanceColor.needsUpdate = true;
     this.slot.delete(id);
     this.born.delete(id);
   }
 
   private writeMatrix(b: Building, t: TypeSlot, i: number, scale: number) {
     const d = BUILDING[b.type];
-    const h = tileHeight(this.s.world, b.x, b.y);
+    const h = baseHeight(this.s.world, b.x, b.y, d.size);
     this.tmpV.set(b.x + d.size / 2, h, b.y + d.size / 2);
     this.tmpQ.identity();
     const sy = scale, sxz = scale < 1 ? 0.6 + 0.4 * scale : scale;
@@ -144,6 +154,7 @@ export class BuildingLayer {
       for (const id of [...this.slot.keys()]) if (!live.has(id)) this.remove(id);
       this.known = live;
       this.syncSig = s.nextId;
+      this.rebuildPlatforms();
     }
     this.glowMat.color.setScalar(glowLevel);
 
@@ -193,7 +204,10 @@ export class BuildingLayer {
         }
         // body tint
         const tc = this.tint?.(b);
-        if (tc) t.body.setColorAt(i, tc); else t.body.setColorAt(i, this.tmpC.setRGB(1, 1, 1));
+        if (tc) this.tmpC.copy(tc); else this.tmpC.setRGB(1, 1, 1);
+        if (b.id === this.hoverId) this.tmpC.multiplyScalar(1.25 + 0.25 * Math.sin(now * 9)); // hover blink
+        if (b.id === this.dangerId) this.tmpC.setRGB(1.8, 0.45, 0.4).multiplyScalar(0.8 + 0.25 * Math.sin(now * 12)); // demolish target
+        t.body.setColorAt(i, this.tmpC);
         // spin
         if (t.spin && m.spin) {
           const d = BUILDING[b.type];
@@ -201,7 +215,7 @@ export class BuildingLayer {
           const speedF = b.status === 'broken' || b.status === 'no_power' ? 0 : d.gen === 'wind' ? Math.max(0.15, b.activity) : Math.min(1, b.activity + 0.05);
           if (!this.reducedMotion) a += dt * m.spin.speed * speedF;
           this.angle.set(b.id, a);
-          const h = tileHeight(s.world, b.x, b.y);
+          const h = baseHeight(s.world, b.x, b.y, d.size);
           const sc = b0 !== undefined ? Math.min(1, (now - b0) / 0.5) : 1;
           this.tmpV.set(b.x + d.size / 2 + m.spin.pivot.x, h + m.spin.pivot.y * sc, b.y + d.size / 2 + m.spin.pivot.z);
           const axis = m.spin.axis === 'x' ? AX : m.spin.axis === 'y' ? AY : AZ;
@@ -218,4 +232,25 @@ export class BuildingLayer {
   }
 
   modelHeight(type: string) { return getModel(type).height; }
+
+  /** concrete platforms under buildings placed across terraces */
+  rebuildPlatforms() {
+    let n = 0;
+    const w = this.s.world;
+    for (const b of this.s.buildings) {
+      const d = BUILDING[b.type];
+      const top = baseHeight(w, b.x, b.y, d.size), bot = minHeight(w, b.x, b.y, d.size);
+      if (top - bot < 0.01 || n >= 1500) continue;
+      this.tmpM.compose(this.tmpV.set(b.x + d.size / 2, (top + bot) / 2, b.y + d.size / 2), this.tmpQ.identity(), this.tmpS.set(d.size - 0.04, top - bot + 0.02, d.size - 0.04));
+      this.plat.setMatrixAt(n++, this.tmpM);
+    }
+    this.plat.count = n;
+    this.plat.instanceMatrix.needsUpdate = true;
+  }
+
+  /** re-seat a building whose position changed (move tool) */
+  refresh(id: number) {
+    this.remove(id);
+    this.syncSig = -1;
+  }
 }

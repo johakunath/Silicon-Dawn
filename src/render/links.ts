@@ -3,7 +3,7 @@ import { BUILDING } from '../sim/data/buildings';
 import { ITEMS, LINKS } from '../sim/data/items';
 import type { GameState } from '../sim/state';
 import type { Link } from '../sim/types';
-import { tileHeight } from './terrain';
+import { baseHeight, tileHeight } from './terrain';
 
 const MAX_SEG = 4000;
 const MAX_PACKETS = 9000;
@@ -35,10 +35,10 @@ export class LinkLayer {
   private data: THREE.InstancedMesh;
   private posts: THREE.InstancedMesh;
   private packets: Record<string, THREE.InstancedMesh> = {};
-  private wires: THREE.LineSegments;
+  private wires: THREE.InstancedMesh;
   private wireEdges: unknown = null;
   private glowMat = new THREE.MeshBasicMaterial({ toneMapped: false });
-  private wireMat = new THREE.LineBasicMaterial({ color: '#2a2a2a', transparent: true, opacity: 0.85 });
+  private wireMat = new THREE.MeshBasicMaterial({ color: '#2a2a2a', toneMapped: false });
   private M = new THREE.Matrix4();
   private Q = new THREE.Quaternion();
   private V = new THREE.Vector3();
@@ -90,7 +90,10 @@ export class LinkLayer {
       this.packets[sh] = im;
       this.group.add(im);
     }
-    this.wires = new THREE.LineSegments(new THREE.BufferGeometry(), this.wireMat);
+    const wgeo = new THREE.CylinderGeometry(1, 1, 1, 5);
+    wgeo.rotateZ(Math.PI / 2);
+    this.wires = new THREE.InstancedMesh(wgeo, this.wireMat, 6000);
+    this.wires.count = 0;
     this.wires.frustumCulled = false;
     this.group.add(this.wires);
   }
@@ -110,8 +113,8 @@ export class LinkLayer {
     const yOff = l.kind === 'conveyor' ? 0.32 : l.kind === 'pipe' ? 0.5 : l.kind === 'cable' ? 0.75 : 0.95;
     // lateral offset so links between the same pair (or both directions) don't overlap
     const lat = ((l.id * 0.37) % 1 - 0.5) * 0.5;
-    const a = new THREE.Vector3(ax + ux * da.size * off - uz * lat, tileHeight(s.world, A.x, A.y) + yOff, az + uz * da.size * off + ux * lat);
-    const b = new THREE.Vector3(bx - ux * db.size * off - uz * lat, tileHeight(s.world, B.x, B.y) + yOff, bz - uz * db.size * off + ux * lat);
+    const a = new THREE.Vector3(ax + ux * da.size * off - uz * lat, baseHeight(s.world, A.x, A.y, da.size) + yOff, az + uz * da.size * off + ux * lat);
+    const b = new THREE.Vector3(bx - ux * db.size * off - uz * lat, baseHeight(s.world, B.x, B.y, db.size) + yOff, bz - uz * db.size * off + ux * lat);
     const len = a.distanceTo(b);
     const arc = l.kind === 'cable' || l.kind === 'fiber' ? Math.min(1.6, 0.25 + len * 0.08) : 0;
     return { id: l.id, a, b, arc, len, packets: [], acc: 0, lastTotal: l.total, kind: l.kind };
@@ -172,10 +175,11 @@ export class LinkLayer {
 
   private rebuildWires() {
     const s = this.s;
-    const pos: number[] = [];
+    let n = 0;
+    const p0 = new THREE.Vector3(), p1 = new THREE.Vector3(), dir = new THREE.Vector3();
     const top = (id: number) => {
       const b = s.byId.get(id)!; const d = BUILDING[b.type];
-      const h = tileHeight(s.world, b.x, b.y);
+      const h = baseHeight(s.world, b.x, b.y, d.size);
       const y = b.type === 'pole' ? 2.08 : b.type === 'substation' ? 1.85 : b.type === 'hq' ? 2.3 : 0.9;
       return new THREE.Vector3(b.x + d.size / 2, h + y, b.y + d.size / 2);
     };
@@ -185,25 +189,28 @@ export class LinkLayer {
       const L = A.distanceTo(B);
       const sag = Math.min(0.8, L * 0.06);
       const N = 10;
-      for (let k = 0; k < N; k++) {
-        for (const t of [k / N, (k + 1) / N]) {
-          const p = new THREE.Vector3().lerpVectors(A, B, t);
-          p.y -= Math.sin(t * Math.PI) * sag;
-          pos.push(p.x, p.y, p.z);
-        }
+      for (let k = 0; k < N && n < 6000; k++) {
+        const t0 = k / N, t1 = (k + 1) / N;
+        p0.lerpVectors(A, B, t0); p0.y -= Math.sin(t0 * Math.PI) * sag;
+        p1.lerpVectors(A, B, t1); p1.y -= Math.sin(t1 * Math.PI) * sag;
+        dir.subVectors(p1, p0);
+        const len = dir.length();
+        if (!(len > 1e-4)) continue;
+        this.Q.setFromUnitVectors(X_AXIS, dir.normalize());
+        this.M.compose(p0.clone().add(p1).multiplyScalar(0.5), this.Q, this.S.set(len, 0.045, 0.045));
+        this.wires.setMatrixAt(n++, this.M);
       }
     }
-    this.wires.geometry.dispose();
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-    this.wires.geometry = g;
+    this.wires.count = n;
+    this.wires.instanceMatrix.needsUpdate = true;
   }
 
   /** sync: 0..1 training intensity → fiber links pulse in unison (cluster sync) */
   update(now: number, dt: number, glowLevel: number, night: number, sync = 0) {
     const s = this.s;
     this.glowMat.color.setScalar(glowLevel);
-    this.wireMat.color.setRGB(0.16 + night * 0.7, 0.15 + night * 0.55, 0.12 + night * 0.1);
+    // dark copper by day, warm glowing lines at night: always readable
+    this.wireMat.color.setRGB(0.32 + night * 1.1, 0.24 + night * 0.85, 0.1 + night * 0.25);
     // structural changes?
     const sig = s.links.length + ':' + (s.links.length ? s.links[s.links.length - 1].id + ':' + s.links[0].id : '') + ':' + s.buildings.length;
     if (sig !== this.linkSig) {

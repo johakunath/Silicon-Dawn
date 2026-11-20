@@ -47,8 +47,14 @@ export const BUILDINGS: BuildingDef[] = [
   },
   {
     id: 'depot', name: 'Supply Depot', short: 'Drop-off & pickup for the stockpile', era: 1, cat: 'logistics', size: 2, hotkey: '8',
-    desc: 'An outpost of your stockpile. Belts can deliver refined goods into it, and you can link it out to any building that needs stockpiled materials (it keeps a small reserve).',
+    desc: 'An outpost of your stockpile. Belts can deliver refined goods into it, and you can link it out to any building that needs stockpiled materials (it always keeps 40 of each item in reserve for construction).',
     cost: { metal: 16 }, power: 0, storage: SOLIDS,
+  },
+
+  {
+    id: 'junction', name: 'Junction', short: 'Merge & split belts or pipes', era: 1, cat: 'logistics', size: 1,
+    desc: 'A small hub that merges several belts (or pipes) into one and splits one into many. For example, chain three water pumps into one pipe, or relay a belt beyond its 14-tile range.',
+    cost: { metal: 2 }, power: 0, junction: true,
   },
 
   // ───────── Era 2 · Silicon ─────────

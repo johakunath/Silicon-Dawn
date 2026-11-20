@@ -1,7 +1,7 @@
 // Headless autoplayer: a simple scripted strategy that plays the campaign through the real action API.
 import { BUILDING } from './data/buildings';
 import { TECHS } from './data/tech';
-import { acceptContract, addLink, checkLink, checkPlace, costOf, canAfford, place, research, canResearch } from './actions';
+import { acceptContract, removeLink, addLink, checkLink, checkPlace, costOf, canAfford, place, research, canResearch } from './actions';
 import { coveredAt, rebuildGrids } from './power';
 import { step } from './sim';
 import { GameState, TICK, countType, hq } from './state';
@@ -99,11 +99,24 @@ export class AutoPlayer {
     const demand = s.buildings.reduce((a, b) => a + Math.max(0, -BUILDING[b.type].power) * (BUILDING[b.type].it || BUILDING[b.type].workload ? 1 : 0.8), 0);
     const gen = s.buildings.reduce((a, b) => a + (BUILDING[b.type].gen === 'solar' ? 6 * s.fx.solarMul : 0), 0) + 6 + n('gas') * 30 + n('wind') * 9 + n('fusion') * 200;
     for (const b of s.buildings) if (b.grid < 0 && BUILDING[b.type].power < 0 && s.tick % 100 < 20) this.powerUp(b);
+    // repair pass: any building missing a fluid/compute input link gets one if a producer is in range
+    if (s.tick % 100 < 20) for (const b of s.buildings) {
+      const d = BUILDING[b.type];
+      for (const it of Object.keys(d.inputs ?? {}) as ItemId[]) {
+        if (s.links.some((l) => l.to === b.id && l.item === it)) continue;
+        if (it === 'coolant' || it === 'water') this.feedFrom(b, it);
+      }
+    }
     // research cheapest available tech
     const avail = TECHS.filter((t) => canResearch(s, t.id).ok).sort((a, b) => a.cost - b.cost);
     if (avail.length) research(s, avail[0].id);
 
-    if (s.era >= 5 && n('engine') < 1) { this.build('engine', cx - 14, cy + 12, 26); if (n('engine') < 1) return; }
+    if (s.era >= 5 && n('engine') < 1) {
+      // save chips for the engine: pause stockpile → consumer chip shipments
+      if ((s.stock.accel ?? 0) >= 44 && (s.stock.chips ?? 0) < 240) for (const l of [...s.links]) if (l.item === 'chips' && BUILDING[s.byId.get(l.from)!.type].storage) removeLink(s, l.id, true);
+      this.build('engine', cx - 14, cy + 12, 26);
+      if (n('engine') < 1) return;
+    }
     // ── power baseline ──
     if (gen < demand * 1.5 + 4) {
       if (s.era >= 4 && s.techs.includes('fusion') && n('fusion') < 2) this.build('fusion', cx + 8, cy - 8, 30);

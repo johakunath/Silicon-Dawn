@@ -11,11 +11,11 @@ import { TECHS } from '../sim/data/tech';
 import { acceptContract, canAfford, canResearch, checkLink, costOf, cycleMode, isUnlocked, lockReason, research, PlaceCheck, removeLink, repair } from '../sim/actions';
 import { ENGINE_TARGET, inputCap, outputCap } from '../sim/sim';
 import type { EraScore } from '../sim/state';
-import { DAY_LENGTH, hq, sunlight, timeOfDay } from '../sim/state';
+import { DAY_LENGTH, dayBias, hq, sunlight, timeOfDay } from '../sim/state';
 import type { Building, BuildingCategory, Cost, ItemId } from '../sim/types';
 import { BIOME, idx } from '../sim/world';
 import { coveredAt } from '../sim/power';
-import { tileHeight } from '../render/terrain';
+import { baseHeight } from '../render/terrain';
 import { itemIcon, renderThumbnails, thumb } from './icons';
 import { badgeFor, explain } from './status';
 
@@ -270,7 +270,7 @@ export class Hud {
     (this.els.topbar.querySelector('#cgauge') as HTMLElement).style.display = s.era >= 2 || s.stats.computeRate > 0 ? '' : 'none';
     // clock
     const tod = timeOfDay(s);
-    const sun = sunlight(tod);
+    const sun = sunlight(tod, dayBias(s));
     const toNight = sun > 0.05;
     this.els.topbar.querySelector('#clock')!.innerHTML = `${toNight ? '☀' : '☾'} ${String(Math.floor(tod * 24)).padStart(2, '0')}:${String(Math.floor((tod * 24 * 60) % 60)).padStart(2, '0')}`;
     void DAY_LENGTH;
@@ -291,7 +291,7 @@ export class Hud {
     this.lastDelivered = delivered;
     if (this.deliverAcc >= 5) {
       const hb = hq(s);
-      this.floatText(new THREE.Vector3(hb.x + 1.5, tileHeight(s.world, hb.x, hb.y) + 4.4, hb.y + 1.5), `+${Math.floor(this.deliverAcc)}`, '#5dff9a');
+      this.floatText(new THREE.Vector3(hb.x + 1.5, baseHeight(s.world, hb.x, hb.y, 3) + 4.4, hb.y + 1.5), `+${Math.floor(this.deliverAcc)}`, '#5dff9a');
       this.deliverAcc = 0;
     }
     const fpsEl = this.els.fps;
@@ -373,7 +373,7 @@ export class Hud {
       const kind = badgeFor(b);
       if (!kind) continue;
       const d = BUILDING[b.type];
-      v.set(b.x + d.size / 2, tileHeight(s.world, b.x, b.y) + g.view.buildings.modelHeight(b.type) + 0.3, b.y + d.size / 2);
+      v.set(b.x + d.size / 2, baseHeight(s.world, b.x, b.y, d.size) + g.view.buildings.modelHeight(b.type) + 0.3, b.y + d.size / 2);
       const p = g.rig.worldToScreen(v);
       if (p.x < -30 || p.y < -30 || p.x > W + 30 || p.y > H + 30) continue;
       const x = p.x, y = p.y - 16 + (b.status === 'broken' ? pulse : 0);

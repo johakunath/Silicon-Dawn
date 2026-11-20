@@ -6,10 +6,10 @@ import { ITEMS } from '../sim/data/items';
 import { addLink, checkLink, checkPlace, cycleMode, demolish, place, removeLink, repair } from '../sim/actions';
 import { loadFromString, saveToString } from '../sim/save';
 import { step } from '../sim/sim';
-import { GameState, TICK, createState, hq, timeOfDay } from '../sim/state';
+import { GameState, TICK, createState, dayBias, hq, timeOfDay } from '../sim/state';
 import type { Building, Difficulty, Link } from '../sim/types';
 import { SceneRig } from '../render/scene';
-import { tileHeight } from '../render/terrain';
+import { baseHeight } from '../render/terrain';
 import { Overlay, WorldView } from '../render/world';
 import { Hud } from '../ui/hud';
 import { badgeFor } from '../ui/status';
@@ -52,7 +52,7 @@ export class Game {
   private acc = 0;
   private clock = new THREE.Clock();
   private keys = new Set<string>();
-  private mouse = { x: 0, y: 0, down: false, button: -1, dragX: 0, dragY: 0, moved: false, lastPaint: '' };
+  private mouse = { x: 0, y: 0, down: false, button: -1, dragX: 0, dragY: 0, moved: false, lastPaint: '', rotating: false };
   private vel = new THREE.Vector2();
   private yawTarget = Math.PI / 4;
   private viewTarget = 13;
@@ -217,17 +217,24 @@ export class Game {
       canvas.focus();
       this.mouse.down = true; this.mouse.button = e.button; this.mouse.dragX = e.clientX; this.mouse.dragY = e.clientY; this.mouse.moved = false;
       this.mouse.lastPaint = '';
+      if ((e.buttons & 3) === 3) { this.mouse.rotating = true; return; }
       if (e.button === 0) this.onPrimary(e.clientX, e.clientY, false);
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove', (e) => {
       const dx = e.clientX - this.mouse.x, dy = e.clientY - this.mouse.y;
       this.mouse.x = e.clientX; this.mouse.y = e.clientY;
-      if (this.mouse.down && (this.mouse.button === 2 || this.mouse.button === 1)) {
+      if (this.mouse.down && ((e.buttons & 3) === 3 || (e.altKey && (e.buttons & 2)))) {
+        // LMB+RMB (or Alt+RMB) drag: free, stepless rotation
+        this.yawTarget += dx * 0.006;
+        this.rig.yaw = this.yawTarget;
+        this.mouse.moved = true;
+        this.mouse.rotating = true;
+      } else if (this.mouse.down && (this.mouse.button === 2 || this.mouse.button === 1)) {
         if (Math.hypot(e.clientX - this.mouse.dragX, e.clientY - this.mouse.dragY) > 4) this.mouse.moved = true;
         this.panScreen(-dx, -dy);
         this.vel.set(-dx, -dy);
-      } else if (this.mouse.down && this.mouse.button === 0 && this.tool.kind === 'build') {
+      } else if (this.mouse.down && this.mouse.button === 0 && !this.mouse.rotating && this.tool.kind === 'build') {
         // paint-place small buildings
         const d = BUILDING[this.tool.type];
         if (d.size <= 2) this.onPrimary(e.clientX, e.clientY, true);
@@ -235,7 +242,7 @@ export class Game {
     });
     canvas.addEventListener('pointerup', (e) => {
       if (e.button === 2 && !this.mouse.moved) this.onSecondary();
-      this.mouse.down = false;
+      if (e.buttons === 0) { this.mouse.down = false; this.mouse.rotating = false; }
     });
     canvas.addEventListener('pointerleave', () => { this.view.hovered = null; this.hud.hideTip(); });
   }
@@ -270,8 +277,8 @@ export class Game {
       case ' ': this.paused = !this.paused; audio.play('click'); this.hud.refreshSpeed(); e.preventDefault(); break;
       case '+': case '=': this.setSpeed(Math.min(4, this.speed * 2)); break;
       case '-': case '_': this.setSpeed(Math.max(1, this.speed / 2)); break;
-      case 'q': this.yawTarget += Math.PI / 2; break;
-      case 'e': this.yawTarget -= Math.PI / 2; break;
+      case 'q': this.yawTarget = (Math.round((this.yawTarget - Math.PI / 4) / (Math.PI / 2)) + 1) * (Math.PI / 2) + Math.PI / 4; break;
+      case 'e': this.yawTarget = (Math.round((this.yawTarget - Math.PI / 4) / (Math.PI / 2)) - 1) * (Math.PI / 2) + Math.PI / 4; break;
       case 'l': this.setTool({ kind: 'link', from: this.view.selected?.id ?? null }); audio.play('click'); break;
       case 'x': this.setTool({ kind: 'demolish' }); audio.play('click'); break;
       case 'delete': if (this.view.selected) { this.demolishBuilding(this.view.selected); } break;
@@ -325,7 +332,7 @@ export class Game {
       if (!c.ok) { if (!painting) { audio.play('error'); this.hud.toast(c.reason ?? 'Cannot build here', 'warn'); } return; }
       const b = place(s, t.type, x, y);
       if (b) {
-        const h = tileHeight(s.world, x, y);
+        const h = baseHeight(s.world, x, y, d.size);
         const costTxt = Object.entries(c.cost).map(([k, v]) => `−${v} ${ITEMS[k as keyof typeof ITEMS].name.toLowerCase()}`).join('  ');
         if (costTxt) this.hud.floatText(new THREE.Vector3(x + d.size / 2, h + 1.5, y + d.size / 2), costTxt, '#ffb347');
         if (!painting && d.unique) this.setTool({ kind: 'select' });
@@ -446,7 +453,7 @@ export class Game {
     if (this.started && !this.mouse.down) this.updateHover();
     // day/night
     const tod = this.started ? timeOfDay(s) : 0.42 + this.realTime * 0.002;
-    this.rig.setTimeOfDay(tod, s.era, s.era >= 5 ? 1 : 0);
+    this.rig.setTimeOfDay(tod, s.era, s.era >= 5 ? 1 : 0, dayBias(s));
     if (this.finale > 0) this.finale = Math.min(1, this.finale + rdt / 20);
     this.view.finaleT = this.finale;
     // era V aurora: faint every night, blazing after ignition

@@ -50,6 +50,8 @@ export interface BuildingDef {
   hub?: number;
   emissions?: number; // footprint score penalty / s at full output
   unique?: boolean;
+  /** belt/pipe junction: merges and splits any solid or fluid */
+  junction?: boolean;
 }
 
 export interface Building {

@@ -11,7 +11,7 @@ import { getModel } from './models';
 import { Particles } from './particles';
 import { FinaleFX } from './finale';
 import { SceneRig } from './scene';
-import { buildProps, buildTerrain, buildWater, PropLayer, tileHeight } from './terrain';
+import { baseHeight, buildProps, buildTerrain, buildWater, PropLayer, tileHeight } from './terrain';
 
 export type Overlay = 'none' | 'power' | 'heat' | 'network' | 'logistics';
 
@@ -143,7 +143,7 @@ export class WorldView {
     let best: Building | null = null, bd = 28;
     for (const b of s.buildings) {
       const d = BUILDING[b.type];
-      const h = tileHeight(s.world, b.x, b.y);
+      const h = baseHeight(s.world, b.x, b.y, d.size);
       const top = this.rig.worldToScreen(new THREE.Vector3(b.x + d.size / 2, h + getModel(b.type).height * 0.6, b.y + d.size / 2));
       const dd = Math.hypot(top.x - px, top.y - py);
       if (dd < bd) { bd = dd; best = b; }
@@ -171,7 +171,7 @@ export class WorldView {
       this.rig.scene.add(g);
     }
     const d = BUILDING[type];
-    const h = tileHeight(this.s.world, x, y);
+    const h = baseHeight(this.s.world, x, y, d.size);
     this.ghost!.visible = true;
     this.ghost!.position.set(x + d.size / 2, Math.max(h, 0), y + d.size / 2);
     const col = ok ? '#5dff9a' : '#ff4a4a';
@@ -193,7 +193,7 @@ export class WorldView {
   private ring(mesh: THREE.Mesh, b: Building | null, pad = 0.35) {
     if (!b) { mesh.visible = false; return; }
     const d = BUILDING[b.type];
-    const h = tileHeight(this.s.world, b.x, b.y);
+    const h = baseHeight(this.s.world, b.x, b.y, d.size);
     mesh.visible = true;
     const r = d.size * 0.72 + pad;
     mesh.scale.set(r, 1, r);
@@ -300,6 +300,14 @@ export class WorldView {
       this.particles.emit('dust', x + 1, h + 0.2, y + 1, 24, 1.4);
       this.lastOvKey = '';
     }
+    if (kind === 'move' && x !== undefined && y !== undefined) {
+      const info = data as { id: number; type: string };
+      this.restoreProps({ x, y, type: info.type });
+      const b = s.byId.get(info.id);
+      if (b) { this.clearProps(b); this.buildings.refresh(b.id); const d = BUILDING[b.type]; this.particles.emit('dust', b.x + d.size / 2, baseHeight(s.world, b.x, b.y, d.size) + 0.2, b.y + d.size / 2, 20, d.size); }
+      this.links.markDirty();
+      this.lastOvKey = '';
+    }
     if ((kind === 'break' || kind === 'repair') && x !== undefined && y !== undefined) {
       const h = tileHeight(s.world, x, y);
       this.particles.emit(kind === 'break' ? 'spark' : 'burst', x + 1, h + 1, y + 1, 30, 1);
@@ -323,9 +331,9 @@ export class WorldView {
       mm.emissiveIntensity = (ore ? 0.05 : 0.2) + rig.night * (ore ? 0.12 : 0.55);
     }
     const eng = s.buildings.find((b) => b.type === 'engine');
-    if (eng) this.finale.place(eng.x + 2, tileHeight(s.world, eng.x, eng.y) + 6.5, eng.y + 2);
+    if (eng) this.finale.place(eng.x + 2, baseHeight(s.world, eng.x, eng.y, 4) + 6.5, eng.y + 2);
     this.finale.update(now, dt, eng ? this.finaleT : 0, eng ? s.engine.progress : 0);
-    if (eng && this.finaleT > 0 && Math.random() < dt * 30) this.particles.emit('burst', eng.x + 2, tileHeight(s.world, eng.x, eng.y) + 6.5, eng.y + 2, 3, 0.6);
+    if (eng && this.finaleT > 0 && Math.random() < dt * 30) this.particles.emit('burst', eng.x + 2, baseHeight(s.world, eng.x, eng.y, 4) + 6.5, eng.y + 2, 3, 0.6);
     this.buildings.update(now, dt, rig.glowLevel, rig.night, this.finale.wave);
     this.syncLevel += ((s.stats.trainRate > 40 ? Math.min(1, s.stats.trainRate / 200) : 0) - this.syncLevel) * Math.min(1, dt * 2);
     this.links.update(now, dt, rig.glowLevel, rig.night, this.syncLevel);
@@ -345,7 +353,7 @@ export class WorldView {
         const m = getModel(b.type);
         if (!m.emitters.length) continue;
         const d = BUILDING[b.type];
-        const h = tileHeight(s.world, b.x, b.y);
+        const h = baseHeight(s.world, b.x, b.y, d.size);
         for (const e of m.emitters) {
           const wx = b.x + d.size / 2 + e.x, wy = h + e.y, wz = b.y + d.size / 2 + e.z;
           if (e.kind === 'heat') { if (b.heat > 0.95 && Math.random() < step * 6) this.particles.emit('heat', wx, wy, wz, 1, d.size * 0.5); continue; }

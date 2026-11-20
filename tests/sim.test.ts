@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createState, TICK, hq } from '../src/sim/state';
 import { step, recomputeFx } from '../src/sim/sim';
-import { addLink, checkLink, checkPlace, place, research, demolish } from '../src/sim/actions';
+import { addLink, checkLink, checkPlace, place, research, demolish, moveBuilding, previewAutoLinks } from '../src/sim/actions';
 import { rebuildGrids } from '../src/sim/power';
 import { loadFromObject, loadFromString, migrate, saveToString, SAVE_VERSION } from '../src/sim/save';
 import { autoplay } from '../src/sim/autoplayer';
@@ -244,5 +244,63 @@ describe('autoplayer', () => {
     const r = autoplay(s, 2, 3 * 3600);
     expect(r.problems).toEqual([]);
     expect(r.eraReached).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('logistics features', () => {
+  it('a junction merges two smelters into one belt to the Core', () => {
+    const s = createState(SEED);
+    s.stock = { metal: 999, silicon: 999 };
+    const h = hq(s);
+    const [jx, jy] = findSpot(s, 'junction', h.x + 5, h.y + 1, 6);
+    const j = place(s, 'junction', jx, jy, { autoLink: false })!;
+    const sms = [0, 1].map((k) => { const [x, y] = findSpot(s, 'smelter', jx + 2, jy + k * 3, 6); return place(s, 'smelter', x, y, { autoLink: false })!; });
+    for (const m of sms) { expect(checkLink(s, m.id, j.id).ok).toBe(true); addLink(s, m.id, j.id); m.inBuf.ore = 50; }
+    const c = checkLink(s, j.id, h.id);
+    expect(c.item).toBe('metal');
+    addLink(s, j.id, h.id);
+    const before = s.stats.delivered.metal ?? 0;
+    run(s, 20);
+    expect((s.stats.delivered.metal ?? 0) - before).toBeGreaterThan(5);
+  });
+  it('platforms allow uneven ground for extra metal, but not steep cliffs', () => {
+    const s = createState(SEED);
+    s.stock = { metal: 9999, silicon: 999 };
+    const w = s.world;
+    let found = false;
+    for (let y = w.cy - 15; y < w.cy + 15 && !found; y++) for (let x = w.cx - 15; x < w.cx + 15 && !found; x++) {
+      const lv = [w.level[y * w.size + x], w.level[y * w.size + x + 1], w.level[(y + 1) * w.size + x], w.level[(y + 1) * w.size + x + 1]];
+      if (lv.some((l) => l === 0)) continue;
+      const diff = Math.max(...lv) - Math.min(...lv);
+      if (diff === 1 && !s.occ[y * w.size + x]) {
+        const c = checkPlace(s, 'solar', x, y);
+        if (c.ok) { expect(c.platform).toBeGreaterThan(0); expect(c.cost.metal).toBeGreaterThan(8); found = true; }
+      }
+    }
+    expect(found).toBe(true);
+  });
+  it('moving a building keeps in-range links and frees the old tiles', () => {
+    const s = createState(SEED);
+    s.stock = { metal: 999, silicon: 999 };
+    const h = hq(s);
+    const [x, y] = findSpot(s, 'smelter', h.x + 5, h.y);
+    const sm = place(s, 'smelter', x, y)!;
+    expect(s.links.some((l) => l.from === sm.id)).toBe(true);
+    const [nx, ny] = findSpot(s, 'smelter', x + 3, y + 1, 6);
+    expect(moveBuilding(s, sm.id, nx, ny)).toBe(true);
+    expect(s.occ[y * s.world.size + x] === sm.id && (nx > x + 1 || ny > y + 1)).toBe(false);
+    expect(sm.x).toBe(nx);
+    expect(s.links.some((l) => l.from === sm.id)).toBe(true);
+  });
+  it('auto-link preview does not change state', () => {
+    const s = createState(SEED);
+    s.stock = { metal: 999, silicon: 999 };
+    const h = hq(s);
+    const [x, y] = findSpot(s, 'smelter', h.x + 5, h.y);
+    const n = s.buildings.length, l = s.links.length;
+    const p = previewAutoLinks(s, 'smelter', x, y);
+    expect(p.length).toBeGreaterThan(0);
+    expect(s.buildings.length).toBe(n);
+    expect(s.links.length).toBe(l);
   });
 });

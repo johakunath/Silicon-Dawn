@@ -177,8 +177,11 @@ export function diffMul(s: GameState) {
   }
 }
 
-export function sunlight(tod: number): number {
-  const elev = Math.sin((tod - 0.25) * Math.PI * 2);
+/** Relaxed difficulty shifts the sun up so nights are much shorter than days. */
+export function dayBias(s: { difficulty: Difficulty }): number { return s.difficulty === 'relaxed' ? 0.3 : 0; }
+
+export function sunlight(tod: number, bias = 0): number {
+  const elev = Math.sin((tod - 0.25) * Math.PI * 2) + bias;
   const t = Math.min(1, Math.max(0, (elev + 0.2) / 0.55));
   return t * t * (3 - 2 * t);
 }
