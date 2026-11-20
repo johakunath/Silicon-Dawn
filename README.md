@@ -49,13 +49,13 @@ The scenarios are `title`, `era1` through `era5` and `stress`. Each one plays he
 npx tsx scripts/playtest.ts
 ```
 
+This plays early Era 1 with real mouse clicks and key presses through the actual UI, and logs what a new player would see.
+
 ```bash
 npx tsx scripts/uicheck.ts
 ```
 
 `uicheck.ts` reviews the UI at 2560×1440: tutorial, tooltips, codex, stats, tech tree, auto-link and link previews, inspector.
-
-This plays early Era 1 with real mouse clicks and key presses through the actual UI, and logs what a new player would see.
 
 ## Controls
 
