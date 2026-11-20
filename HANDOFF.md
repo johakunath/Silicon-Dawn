@@ -12,6 +12,15 @@
 - GPU cost was reduced: the shadow map went from 4096 to 3072, and only trees and pines cast prop shadows, not bushes, rocks or deposits.
 - Aurora scanline stripes were removed (smoother bands, limited to the top of the screen), and the finale halo is subtler.
 
+## Feedback round 1 (2026-11-20)
+See `PLAYTEST.md` → "Feedback round 1" for every item and its fix. New modules: `ui/tutorial.ts`, `ui/codex.ts`, `ui/tips.ts`, `ui/rates.ts`. New sim features: junctions, platforms, `moveBuilding`, `previewAutoLinks`, 100% refunds, storage reserve, per-item consumed and spent counters, per-building `pw` power flow.
+
+### Proposed next (not built yet)
+- **AI consumer economy:** cities and industries that buy inference (growing demand curves, price per compute, reputation), so compute has an end use beyond contracts.
+- **Blueprints / copy-paste** (Factorio): select an area and stamp it.
+- **Alt-mode** recipe icons over buildings (Factorio) and belt tiers placed per link.
+- **Snap-to-grid nudge and rotation** of buildings (Satisfactory), once models have a facing.
+
 ## Known issues / needs a human
 - Balance and pacing are derived from the bot. A human playthrough is needed to confirm the 2–3 h target and event difficulty per mode.
 - On some sandbox seeds (for example 777), the autoplayer stalls in era 4. This is the bot's own placement failing, not a game deadlock.

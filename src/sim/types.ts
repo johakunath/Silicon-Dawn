@@ -87,6 +87,8 @@ export interface Building {
   outF: number;
   /** extra per-type state */
   boost: number; // hub boost multiplier last tick
+  /** power flow last tick: + draw, − generation */
+  pw: number;
 }
 
 export type Status =

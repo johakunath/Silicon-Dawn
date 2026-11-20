@@ -35,7 +35,7 @@ export function tileHeight(w: World, x: number, y: number): number {
 
 export function buildTerrain(w: World): THREE.Mesh {
   const pos: number[] = [], col: number[] = [];
-  const c = new THREE.Color(), c2 = new THREE.Color();
+  const c = new THREE.Color(), c2 = new THREE.Color(), csub = new THREE.Color(), flower = new THREE.Color('#e8e07a');
   const pushQuad = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, dx: number, dy: number, dz: number, color: THREE.Color, color2?: THREE.Color) => {
     const k = color2 ?? color;
     pos.push(ax, ay, az, bx, by, bz, cx, cy, cz, ax, ay, az, cx, cy, cz, dx, dy, dz);
@@ -67,7 +67,14 @@ export function buildTerrain(w: World): THREE.Mesh {
     // subtle large-scale tint variation
     const v = 0.92 + hashTile(x >> 2, y >> 2, w.seed + 9) * 0.12;
     c.multiplyScalar(v);
-    pushQuad(x, h, y, x, h, y + 1, x + 1, h, y + 1, x + 1, h, y, c);
+    // finer 2×2 sub-tiles per tile: subtle colour jitter (grass blades, sand ripples, snow drifts)
+    for (let sy = 0; sy < 2; sy++) for (let sx = 0; sx < 2; sx++) {
+      const j = hashTile(x * 2 + sx, y * 2 + sy, w.seed + 23);
+      csub.copy(c).multiplyScalar(0.94 + j * 0.12);
+      if (l > 0 && j > 0.93 && (b === BIOME.GRASS || b === BIOME.FOREST)) csub.lerp(flower, 0.25);
+      const x0 = x + sx * 0.5, y0 = y + sy * 0.5;
+      pushQuad(x0, h, y0, x0, h, y0 + 0.5, x0 + 0.5, h, y0 + 0.5, x0 + 0.5, h, y0, csub);
+    }
     // walls: east (+x) and south (+y), west, north
     const neigh: [number, number, number[]][] = [
       [x + 1, y, [x + 1, y, x + 1, y + 1]],

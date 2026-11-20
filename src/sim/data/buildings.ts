@@ -43,7 +43,7 @@ export const BUILDINGS: BuildingDef[] = [
   {
     id: 'battery', name: 'Battery Bank', short: 'Stores surplus power', era: 1, cat: 'power', size: 2, hotkey: '7',
     desc: 'Charges from surplus generation and discharges when demand exceeds supply, for example at night.',
-    cost: { metal: 14, silicon: 8 }, power: 0, battery: { capacity: 300, rate: 10 }, node: { radius: 2.5, reach: 4 },
+    cost: { metal: 14, silicon: 8 }, power: 0, battery: { capacity: 600, rate: 12 }, node: { radius: 2.5, reach: 4 },
   },
   {
     id: 'depot', name: 'Supply Depot', short: 'Drop-off & pickup for the stockpile', era: 1, cat: 'logistics', size: 2, hotkey: '8',

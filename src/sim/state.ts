@@ -24,6 +24,8 @@ export interface EraScore { era: number; time: number; efficiency: number; relia
 
 export interface Stats {
   produced: Partial<Record<ItemId, number>>;
+  consumed: Partial<Record<ItemId, number>>;
+  spent: Partial<Record<ItemId, number>>;
   delivered: Partial<Record<ItemId, number>>;
   trainTotal: number;
   rpTotal: number;
@@ -100,7 +102,7 @@ export const BASE_FX: TechEffects = {
 
 export function emptyStats(): Stats {
   return {
-    produced: {}, delivered: {}, trainTotal: 0, rpTotal: 0, servedTotal: 0, inferenceRate: 0, trainRate: 0, computeRate: 0, computeUsed: 0,
+    produced: {}, consumed: {}, spent: {}, delivered: {}, trainTotal: 0, rpTotal: 0, servedTotal: 0, inferenceRate: 0, trainRate: 0, computeRate: 0, computeUsed: 0,
     itPower: 0, facilityPower: 0, cleanGen: 0, totalGen: 0, emissions: 0,
     eraEnergyIT: 0, eraEnergyTotal: 0, eraHealthyTime: 0, eraPoweredTime: 0, eraEmissions: 0, eraGen: 0, eraCleanGen: 0,
     contractsDone: 0, eraContractsDone: 0, eventsSurvived: 0, pueWindow: [],
@@ -111,8 +113,8 @@ export const START_STOCK: Partial<Record<ItemId, number>> = { metal: 70, silicon
 
 export function newBuilding(id: number, type: string, x: number, y: number, t: number): Building {
   return {
-    id, type, x, y, inBuf: {}, outBuf: {}, activity: 0, status: 'ok', heat: 0, grid: -1, powerSat: 0, charge: 0,
-    mode: 'balanced', broken: 0, built: t, produced: 0, richness: 1, rx: 0, rxFiber: 0, rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, boost: 1,
+    id, type, x, y, inBuf: {}, outBuf: {}, activity: 0, status: 'idle', heat: 0, grid: -1, powerSat: 0, charge: 0,
+    mode: 'balanced', broken: 0, built: t, produced: 0, richness: 1, rx: 0, rxFiber: 0, rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, boost: 1, pw: 0,
   };
 }
 
@@ -178,7 +180,7 @@ export function diffMul(s: GameState) {
 }
 
 /** Relaxed difficulty shifts the sun up so nights are much shorter than days. */
-export function dayBias(s: { difficulty: Difficulty }): number { return s.difficulty === 'relaxed' ? 0.3 : 0; }
+export function dayBias(s: { difficulty: Difficulty }): number { return s.difficulty === 'relaxed' ? 0.45 : 0; }
 
 export function sunlight(tod: number, bias = 0): number {
   const elev = Math.sin((tod - 0.25) * Math.PI * 2) + bias;

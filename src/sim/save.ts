@@ -106,7 +106,7 @@ export function loadFromObject(raw: unknown): GameState {
   s.rng.s = d.rng >>> 0 || 1;
   for (const b of d.buildings ?? []) {
     if (!BUILDING[b.type]) continue;
-    addBuildingRaw(s, { ...({ rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1 } as Partial<Building>), ...b } as Building);
+    addBuildingRaw(s, { ...({ rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, pw: 0 } as Partial<Building>), ...b } as Building);
   }
   s.links = s.links.filter((l) => s.byId.has(l.from) && s.byId.has(l.to));
   recomputeFx(s);

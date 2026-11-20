@@ -48,10 +48,44 @@ export class WorldView {
   finaleT = 0;
   syncLevel = 0;
 
+  private prevMat = new THREE.MeshBasicMaterial({ toneMapped: false, transparent: true, opacity: 0.85, depthWrite: false });
+  private prev = (() => { const g = new THREE.CylinderGeometry(1, 1, 1, 6); g.rotateZ(Math.PI / 2); const m = new THREE.InstancedMesh(g, this.prevMat, 400); m.count = 0; m.frustumCulled = false; m.renderOrder = 7; m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(1200), 3); return m; })();
+
+  /** anchor point above a building (or a ghost footprint) for preview lines */
+  anchor(x: number, y: number, size: number, lift = 0.8): THREE.Vector3 {
+    return new THREE.Vector3(x + size / 2, baseHeight(this.s.world, x, y, size) + lift, y + size / 2);
+  }
+  /** dashed glowing preview lines (auto-link preview, link tool, power hookup) */
+  setPreview(lines: { a: THREE.Vector3; b: THREE.Vector3; color: string }[]) {
+    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), S = new THREE.Vector3(), X = new THREE.Vector3(1, 0, 0), C = new THREE.Color();
+    let n = 0;
+    const t = performance.now() / 1000;
+    for (const l of lines) {
+      const len = l.a.distanceTo(l.b);
+      const dashes = Math.max(2, Math.floor(len / 0.5));
+      for (let k = 0; k < dashes && n < 400; k++) {
+        const f0 = (k + ((t * 2) % 1)) / dashes, f1 = Math.min(1, f0 + 0.55 / dashes);
+        if (f0 >= 1) continue;
+        const p0 = new THREE.Vector3().lerpVectors(l.a, l.b, f0), p1 = new THREE.Vector3().lerpVectors(l.a, l.b, f1);
+        p0.y += Math.sin(f0 * Math.PI) * len * 0.12; p1.y += Math.sin(f1 * Math.PI) * len * 0.12;
+        const dir = p1.clone().sub(p0); const dl = dir.length();
+        if (!(dl > 1e-4)) continue;
+        Q.setFromUnitVectors(X, dir.normalize());
+        M.compose(p0.add(p1).multiplyScalar(0.5), Q, S.set(dl, 0.06, 0.06));
+        this.prev.setMatrixAt(n, M);
+        this.prev.setColorAt(n, C.set(l.color).multiplyScalar(1.8));
+        n++;
+      }
+    }
+    this.prev.count = n;
+    this.prev.instanceMatrix.needsUpdate = true;
+    if (this.prev.instanceColor) this.prev.instanceColor.needsUpdate = true;
+  }
+
   constructor(public rig: SceneRig, private s: GameState) {
     this.buildings = new BuildingLayer(s);
     this.links = new LinkLayer(s);
-    this.rig.scene.add(this.finale.group, this.buildings.group, this.links.group, this.particles.points, this.foot, this.selRing, this.hoverRing, this.rangeRing);
+    this.rig.scene.add(this.prev, this.finale.group, this.buildings.group, this.links.group, this.particles.points, this.foot, this.selRing, this.hoverRing, this.rangeRing);
     this.foot.visible = false; this.selRing.visible = false; this.hoverRing.visible = false; this.rangeRing.visible = false;
     this.foot.renderOrder = 3; this.selRing.renderOrder = 4; this.hoverRing.renderOrder = 4; this.rangeRing.renderOrder = 4;
     this.buildWorld();
@@ -151,7 +185,7 @@ export class WorldView {
     return best;
   }
 
-  setGhost(type: string | null, x = 0, y = 0, ok = true) {
+  setGhost(type: string | null, x = 0, y = 0, ok = true, unpowered = false) {
     if (!type) {
       if (this.ghost) this.ghost.visible = false;
       this.foot.visible = false;
@@ -174,7 +208,7 @@ export class WorldView {
     const h = baseHeight(this.s.world, x, y, d.size);
     this.ghost!.visible = true;
     this.ghost!.position.set(x + d.size / 2, Math.max(h, 0), y + d.size / 2);
-    const col = ok ? '#5dff9a' : '#ff4a4a';
+    const col = !ok ? '#ff4a4a' : unpowered ? '#ffb347' : '#5dff9a';
     this.ghostMat.color.set(col);
     this.footMat.color.set(col);
     this.foot.visible = true;

@@ -9,6 +9,7 @@ import { GUIDE } from '../sim/data/guide';
 import { ITEMS, LINKS } from '../sim/data/items';
 import { TECHS } from '../sim/data/tech';
 import { acceptContract, canAfford, canResearch, checkLink, costOf, cycleMode, isUnlocked, lockReason, research, PlaceCheck, removeLink, repair } from '../sim/actions';
+import type { Link } from '../sim/types';
 import { ENGINE_TARGET, inputCap, outputCap } from '../sim/sim';
 import type { EraScore } from '../sim/state';
 import { DAY_LENGTH, dayBias, hq, sunlight, timeOfDay } from '../sim/state';
@@ -17,6 +18,11 @@ import { BIOME, idx } from '../sim/world';
 import { coveredAt } from '../sim/power';
 import { baseHeight } from '../render/terrain';
 import { itemIcon, renderThumbnails, thumb } from './icons';
+import { RateTracker } from './rates';
+import { computeTip, defTip, powerBreakdown, powerTip, ratioLines, resourceTip } from './tips';
+import { CHAPTERS } from './codex';
+import { Tutorial } from './tutorial';
+import { TECH } from '../sim/data/tech';
 import { badgeFor, explain } from './status';
 
 const h = (tag: string, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
@@ -28,6 +34,12 @@ const TABS: { id: string; name: string; cats: BuildingCategory[] }[] = [
   { id: 'prod', name: 'INDUSTRY', cats: ['extract', 'refine', 'logistics'] },
   { id: 'compute', name: 'COMPUTE', cats: ['compute', 'cooling', 'workload', 'special'] },
 ];
+
+function batteryIcon(frac: number, mode: 'c' | 'd' | '') {
+  const w = Math.round(Math.max(0, Math.min(1, frac)) * 16);
+  const col = frac > 0.5 ? '#5dff9a' : frac > 0.2 ? '#ffb347' : '#ff5a5a';
+  return `<svg width="26" height="13" viewBox="0 0 26 13" style="vertical-align:-2px"><rect x="1" y="1" width="21" height="11" rx="2" fill="none" stroke="#93a4c4" stroke-width="1.5"/><rect x="22.5" y="4" width="2.5" height="5" fill="#93a4c4"/><rect x="3" y="3" width="${w}" height="7" fill="${col}"/>${mode === 'c' ? '<path d="M11 2 8 7h3l-1 4 4-5h-3l1-4z" fill="#fff"/>' : ''}</svg>`;
+}
 
 const SHOWN_RES: ItemId[] = ['metal', 'silicon', 'chips', 'accel', 'rare', 'robots'];
 
@@ -47,6 +59,12 @@ export class Hud {
   private lastDelivered = 0;
   private openModal: string | null = null;
   private lastSimT = 0;
+  rates = new RateTracker();
+  tutorial!: Tutorial;
+  hoveredPaletteType: string | null = null;
+  private codexCh = 'start';
+  hotbar: (string | null)[] = (() => { try { const v = JSON.parse(localStorage.getItem('sd_hotbar') ?? 'null'); if (Array.isArray(v) && v.length === 10) return v; } catch { /* */ } return ['solar', 'pole', 'quarry', 'furnace', 'drill', 'smelter', 'battery', 'depot', 'junction', null]; })();
+  currentTab() { return this.tab; }
 
   constructor(private g: Game, root: HTMLElement) {
     this.root = root;
@@ -54,46 +72,82 @@ export class Hud {
     this.build();
     root.addEventListener('pointerover', (e) => { this.pointerOverUi = (e.target as HTMLElement) !== root && !!(e.target as HTMLElement).closest('.panel, .modal, button'); });
     root.addEventListener('pointerout', () => { this.pointerOverUi = false; });
+    // generic rich tooltips: any element with data-tip (static html) or data-tipk (dynamic key)
+    root.addEventListener('pointermove', (e) => {
+      const el = (e.target as HTMLElement).closest('[data-tip],[data-tipk]') as HTMLElement | null;
+      if (!el) { if (this.uiTip) { this.uiTip = false; this.hideTip(); } return; }
+      const html = el.dataset.tip ?? this.dynTip(el.dataset.tipk!);
+      if (html) { this.uiTip = true; this.tipAt(e.clientX, e.clientY, html); }
+    });
+    root.addEventListener('pointerleave', () => { this.uiTip = false; this.hideTip(); });
+    this.tutorial = new Tutorial(g, document.getElementById('ovl')!);
     this.onNewState();
     this.showTitle();
+  }
+  private uiTip = false;
+
+  private dynTip(k: string): string {
+    const s = this.g.s;
+    if (k === 'power') return powerTip(s);
+    if (k === 'compute') return computeTip(s);
+    if (k.startsWith('res:')) return resourceTip(s, this.rates, k.slice(4) as ItemId | 'rp');
+    if (k.startsWith('def:')) return defTip(s, BUILDING[k.slice(4)]);
+    if (k.startsWith('hot:')) { const t = this.hotbar[Number(k.slice(4))]; return t ? defTip(s, BUILDING[t]) + '<br><span class="dim">Hover a build item and press a number key to change this slot.</span>' : '<b>Empty hotbar slot</b><br>Hover a build item in the menu and press this number to assign it.'; }
+    if (k.startsWith('tech:')) { const t = TECH[k.slice(5)]; const c = canResearch(s, t.id); return `<b>${t.name}</b> · ${t.cost} research<br>${t.desc}<br><span class="dim">${s.techs.includes(t.id) ? 'Researched ✓' : c.ok ? 'Click to research' : c.reason}${t.requires?.length ? ' · needs ' + t.requires.map((r) => TECH[r].name).join(', ') : ''}</span>`; }
+    if (k === 'clock') return `<b>Day & night</b><br>A full day lasts 4 minutes. Solar is dark for about ${Math.round(this.g.s.difficulty === 'relaxed' ? 70 : 110)} s each night${this.g.s.difficulty === 'relaxed' ? ' (shorter on Relaxed)' : ''}.`;
+    return '';
   }
 
   private build() {
     const r = this.root;
     r.innerHTML = '';
     const add = (id: string, el: HTMLElement) => { el.id = id; r.appendChild(el); this.els[id] = el; return el; };
-    add('badges', h('canvas'));
-    add('floats', h('div'));
+    // screen-space layer (not affected by UI zoom): badges, floating numbers, tooltip, tutorial
+    const ovl = document.getElementById('ovl')!;
+    ovl.innerHTML = '';
+    const addO = (id: string, el: HTMLElement) => { el.id = id; ovl.appendChild(el); this.els[id] = el; return el; };
+    const under = document.getElementById('under')!;
+    under.innerHTML = '';
+    const addU = (id: string, el: HTMLElement) => { el.id = id; under.appendChild(el); this.els[id] = el; return el; };
+    addU('badges', h('canvas'));
+    addU('floats', h('div'));
     add('redvig', h('div', 'vignette-red'));
     // top bar
     const top = add('topbar', h('div', 'panel'));
     top.innerHTML = `<div id="logo">SILICON<br>DAWN</div><div id="erachip"></div><div id="res"></div>
-      <div class="gauge" id="pgauge"><div class="top"><span>${itemIcon('power', 16)} POWER</span><span id="pval"></span></div><div class="bar"><i id="pbar"></i><b id="pdem"></b></div><div class="top" style="font-size:13px;color:#93a4c4"><span id="pbat"></span><span id="ppue"></span></div></div>
-      <div class="gauge" id="cgauge"><div class="top"><span style="color:#6fe9ff">◈ COMPUTE</span><span id="cval"></span></div><div class="bar"><i id="cbar" style="background:#6fe9ff"></i></div><div class="top" style="font-size:13px;color:#93a4c4"><span id="cuse"></span><span id="crp"></span></div></div>
-      <div id="clock"></div><div id="speed"></div>
-      <button id="btn-tech" title="Tech tree (T)">TECH <kbd>T</kbd></button><button id="btn-guide" title="Field guide (J)">GUIDE <kbd>J</kbd></button><button id="btn-menu" title="Menu (Esc)">☰</button>`;
+      <div class="gauge" id="pgauge" data-tipk="power"><div class="top"><span>${itemIcon('power', 16)} POWER</span><span id="pval"></span></div><div class="bar"><i id="pbar"></i><b id="pdem"></b></div><div class="top" style="font-size:13px;color:#93a4c4"><span id="pbat" class="batt"></span><span id="ppue"></span></div></div>
+      <div class="gauge" id="cgauge" data-tipk="compute"><div class="top"><span style="color:#6fe9ff">◈ COMPUTE</span><span id="cval"></span></div><div class="bar"><i id="cbar" style="background:#6fe9ff"></i></div><div class="top" style="font-size:13px;color:#93a4c4"><span id="cuse"></span><span id="crp"></span></div></div>
+      <div id="clock" data-tipk="clock"></div><div id="speed"></div>
+      <button id="btn-stats" data-tip="<b>Statistics</b> (I)<br>Production and consumption per minute for every item, and power by source and consumer.">STATS <kbd>I</kbd></button><button id="btn-tech" data-tip="<b>Technology</b> (T)<br>Spend research on upgrades. Branches: efficiency, capacity, reliability.">TECH <kbd>T</kbd></button><button id="btn-guide" data-tip="<b>Codex</b> (J)<br>Short chapters on controls, power, logistics, ratios and every building.">CODEX <kbd>J</kbd></button><button id="btn-menu" data-tip="<b>Menu</b> (Esc)<br>Settings, save & load, restart the tutorial.">☰</button>`;
     this.els.res = top.querySelector('#res')!;
     const sp = top.querySelector('#speed')!;
     for (const [lbl, v] of [['❚❚', 0], ['1×', 1], ['2×', 2], ['4×', 4]] as const) {
       const b = h('button', '', lbl);
+      b.dataset.tip = v === 0 ? '<b>Pause</b> (Space)<br>You can still build while paused.' : `<b>${v}× speed</b> (+/−)`;
       b.dataset.v = String(v);
       b.onclick = () => { if (v === 0) { this.g.paused = !this.g.paused; audio.play('click'); this.refreshSpeed(); } else this.g.setSpeed(v); };
       sp.appendChild(b);
     }
     (top.querySelector('#btn-tech') as HTMLElement).onclick = () => this.openTech();
+    (top.querySelector('#btn-stats') as HTMLElement).onclick = () => this.openStats();
     (top.querySelector('#btn-guide') as HTMLElement).onclick = () => this.openGuide();
     (top.querySelector('#btn-menu') as HTMLElement).onclick = () => this.openMenu();
     // build palette
     const bp = add('build', h('div', 'panel'));
-    bp.innerHTML = `<div class="ptitle">BUILD <span style="float:right;font-size:14px"><kbd>L</kbd> link · <kbd>X</kbd> demolish</span></div><div class="tabs"></div><div class="list"></div>`;
+    bp.innerHTML = `<div class="ptitle">BUILD</div><div class="tabs"></div><div class="list"></div>`;
     const tabs = bp.querySelector('.tabs')!;
     for (const t of TABS) { const b = h('button', '', t.name); b.dataset.tab = t.id; b.onclick = () => { this.tab = t.id; audio.play('click'); this.refreshPalette(); }; tabs.appendChild(b); }
-    const tools = h('div', 'tabs');
-    const lb = h('button', '', '⟿ LINK'); lb.id = 'tool-link'; lb.onclick = () => this.g.setTool(this.g.tool.kind === 'link' ? { kind: 'select' } : { kind: 'link', from: this.g.view.selected?.id ?? null });
-    const db = h('button', '', '✕ DEMOLISH'); db.id = 'tool-demo'; db.onclick = () => this.g.setTool(this.g.tool.kind === 'demolish' ? { kind: 'select' } : { kind: 'demolish' });
-    const ab = h('button', '', 'AUTO-LINK'); ab.id = 'tool-auto'; ab.title = 'Automatically connect new buildings to nearby partners'; ab.onclick = () => { this.g.s.autoLink = !this.g.s.autoLink; audio.play('click'); this.refreshTool(); };
-    tools.append(lb, db, ab);
-    bp.insertBefore(tools, bp.querySelector('.list'));
+    for (const b of tabs.querySelectorAll<HTMLElement>('button')) b.dataset.tip = { power: '<b>Power</b><br>Generators, poles, substations, batteries.', prod: '<b>Industry</b><br>Extractors, refineries, fabs, depots, junctions.', compute: '<b>Compute</b><br>Racks, cooling, labs, workloads, special buildings.' }[b.dataset.tab!] ?? '';
+    // bottom toolbar: hotbar (1–0) + tools, styled differently from build categories
+    const bar = add('bottombar', h('div'));
+    bar.innerHTML = `<div id="hotbar" class="panel"></div><div id="tools" class="panel"></div>`;
+    const tools = bar.querySelector('#tools')!;
+    const tool = (id: string, icon: string, label: string, key: string, tip: string, fn: () => void) => { const b = h('button', 'toolbtn', `<span class="ti">${icon}</span><span>${label}</span><kbd>${key}</kbd>`); b.id = id; b.dataset.tip = tip; b.onclick = fn; tools.appendChild(b); };
+    tool('tool-link', '⟿', 'LINK', 'L', '<b>Link tool</b> (L)<br>Click a building, then another, in either order, to connect them with a belt, pipe or data cable. The dashed preview turns green when the link is valid.<br>Click an existing link (it glows) to remove it. Shift keeps linking from the same building.', () => this.g.setTool(this.g.tool.kind === 'link' ? { kind: 'select' } : { kind: 'link', from: null }));
+    tool('tool-move', '✥', 'MOVE', 'V', '<b>Move</b> (V)<br>Pick up a building and put it somewhere else, free. Links stay if still in range.', () => this.g.setTool(this.g.tool.kind === 'move' ? { kind: 'select' } : { kind: 'move', id: null }));
+    tool('tool-demo', '✕', 'DEMOLISH', 'X', '<b>Demolish</b> (X)<br>Click a building or a link to remove it. Refunds <b>100%</b>: rearranging is never punished.', () => this.g.setTool(this.g.tool.kind === 'demolish' ? { kind: 'select' } : { kind: 'demolish' }));
+    tool('tool-auto', '⚡', 'AUTO-LINK', '', '<b>Auto-link</b> (toggle)<br>When ON, new buildings connect to their nearest partners automatically. Cyan dashed lines preview the links before you place. Turn OFF to wire everything yourself.', () => { this.g.s.autoLink = !this.g.s.autoLink; audio.play('click'); this.refreshTool(); });
+    this.renderHotbar();
     // side
     const side = add('side', h('div'));
     side.innerHTML = `<div id="eventbar" class="panel"></div><div id="obj" class="panel"></div><div id="contracts" class="panel"></div>`;
@@ -116,12 +170,12 @@ export class Hud {
     add('legend', h('div', 'panel'));
     add('insp', h('div', 'panel'));
     add('toasts', h('div'));
-    add('tip', h('div', 'panel'));
+    addO('tip', h('div', 'panel'));
     add('hint', h('div', 'panel'));
     add('fps', h('div'));
     add('banner', h('div'));
     // modals
-    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save']) {
+    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats']) {
       const m = add(id, h('div', 'modal'));
       m.addEventListener('pointerdown', (e) => { if (e.target === m && id !== 'title' && id !== 'finale') this.closeModals(); });
     }
@@ -138,6 +192,7 @@ export class Hud {
     this.lastDelivered = Object.values(s.stats.delivered).reduce((a, b) => a + (b ?? 0), 0);
     this.refreshPalette(); this.refreshTool(); this.refreshOverlay(); this.refreshSpeed(); this.refreshInspector(true);
     this.slowT = 99;
+    this.rates.reset();
   }
 
   // ───────── palette ─────────
@@ -159,10 +214,12 @@ export class Hud {
       const el = h('div', 'bitem clickable' + (unlocked ? '' : ' locked') + (unlocked && !canAfford(s, cost) ? ' poor' : ''));
       el.dataset.type = d.id;
       const lr = lockReason(s, d);
-      el.innerHTML = `<img src="${thumb(d.id)}" alt=""><div><div class="n">${d.name}</div><div class="s">${lr && !unlocked ? '🔒 ' + lr : d.short}</div><div class="cost">${unlocked ? costHtml(s, cost) : ''}</div></div>${unlocked && n <= 9 ? `<kbd class="hk">${n}</kbd>` : ''}${unlocked && !this.newSeen.has(d.id) ? '<span class="new">NEW</span>' : ''}`;
+      const slot = this.hotbar.indexOf(d.id);
+      el.innerHTML = `<img src="${thumb(d.id)}" alt=""><div><div class="n">${d.name}</div><div class="s">${lr && !unlocked ? '🔒 ' + lr : d.short}</div><div class="cost">${unlocked ? costHtml(s, cost) : ''}</div></div>${slot >= 0 ? `<kbd class="hk">${(slot + 1) % 10}</kbd>` : ''}${unlocked && !this.newSeen.has(d.id) ? '<span class="new">NEW</span>' : ''}`;
+      el.dataset.tipk = 'def:' + d.id;
+      el.onmouseleave = () => { this.hoveredPaletteType = null; };
       el.onclick = () => { if (!unlocked) { audio.play('error'); return; } this.newSeen.add(d.id); this.g.setTool({ kind: 'build', type: d.id }); audio.play('click'); };
-      el.onmouseenter = () => audio.play('hover');
-      el.title = d.desc;
+      el.onmouseenter = () => { audio.play('hover'); this.hoveredPaletteType = unlocked ? d.id : null; };
       if (this.g.tool.kind === 'build' && this.g.tool.type === d.id) el.classList.add('on');
       list.appendChild(el);
     }
@@ -174,10 +231,37 @@ export class Hud {
     });
   }
 
-  hotkey(n: number) {
-    const items = [...this.els.build.querySelectorAll<HTMLElement>('.bitem:not(.locked)')];
-    const el = items[n - 1];
-    if (el) el.click();
+  hotkey(n: number) { this.useHotbar(n - 1); }
+
+  useHotbar(slot: number) {
+    const t = this.hotbar[slot];
+    if (!t) { audio.play('error'); this.toast('Empty slot: hover a build item and press this number to assign it', 'info'); return; }
+    const d = BUILDING[t];
+    if (!isUnlocked(this.g.s, d)) { audio.play('error'); this.toast(`${d.name}: ${lockReason(this.g.s, d)}`, 'warn'); return; }
+    this.newSeen.add(t);
+    this.g.setTool(this.g.tool.kind === 'build' && this.g.tool.type === t ? { kind: 'select' } : { kind: 'build', type: t });
+    audio.play('click');
+  }
+  assignHotbar(slot: number, type: string | null) {
+    if (!type) return;
+    const prev = this.hotbar.indexOf(type);
+    if (prev >= 0) this.hotbar[prev] = null;
+    this.hotbar[slot] = type;
+    try { localStorage.setItem('sd_hotbar', JSON.stringify(this.hotbar)); } catch { /* */ }
+    audio.play('select');
+    this.toast(`${BUILDING[type].name} → slot ${(slot + 1) % 10}`, 'good');
+    this.renderHotbar(); this.refreshPalette();
+  }
+  renderHotbar() {
+    const hb = this.root.querySelector('#hotbar') as HTMLElement | null;
+    if (!hb) return;
+    const s = this.g.s;
+    hb.innerHTML = this.hotbar.map((t, i) => {
+      const un = t ? isUnlocked(s, BUILDING[t]) : false;
+      const on = this.g.tool.kind === 'build' && this.g.tool.type === t;
+      return `<div class="hslot clickable${on ? ' on' : ''}${t && !un ? ' locked' : ''}" data-slot="${i}" data-tipk="hot:${i}">${t ? `<img src="${thumb(t)}">` : ''}<kbd>${(i + 1) % 10}</kbd></div>`;
+    }).join('');
+    hb.querySelectorAll<HTMLElement>('.hslot').forEach((el) => (el.onclick = () => this.useHotbar(Number(el.dataset.slot))));
   }
 
   refreshTool() {
@@ -185,12 +269,15 @@ export class Hud {
     this.els.build.querySelectorAll<HTMLElement>('.bitem').forEach((e) => e.classList.toggle('on', t.kind === 'build' && e.dataset.type === t.type));
     this.root.querySelector('#tool-link')?.classList.toggle('on', t.kind === 'link');
     this.root.querySelector('#tool-demo')?.classList.toggle('on', t.kind === 'demolish');
+    this.root.querySelector('#tool-move')?.classList.toggle('on', t.kind === 'move');
+    this.renderHotbar();
     this.root.querySelector('#tool-auto')?.classList.toggle('on', this.g.s.autoLink);
     const hint = this.els.hint;
-    if (t.kind === 'build') hint.innerHTML = `<b>LMB</b> place · drag to paint · <b>RMB</b>/<b>Esc</b> cancel · new buildings ${this.g.s.autoLink ? '<b>auto-link</b> to neighbours' : 'are <b>not</b> auto-linked'}`;
-    else if (t.kind === 'link') hint.innerHTML = t.from === null ? '<b>LINK:</b> click the <b>source</b> building (or click a link to remove it) · <b>Esc</b> cancel' : `<b>LINK:</b> click the <b>destination</b> for ${BUILDING[this.g.s.byId.get(t.from)?.type ?? 'hq'].name} · hold <b>Shift</b> to chain`;
-    else if (t.kind === 'demolish') hint.innerHTML = '<b>DEMOLISH:</b> click a building or link · 50% refund (100% within 15 s) · <b>Esc</b> cancel';
-    else hint.innerHTML = '<b>WASD</b>/drag RMB pan · <b>wheel</b> zoom · <b>Q/E</b> rotate · <b>Z</b> next problem · <b>C</b> core · <b>Space</b> pause';
+    if (t.kind === 'build') hint.innerHTML = `<b>LMB</b> place · drag to paint · <b>RMB</b>/<b>Esc</b> cancel · ${this.g.s.autoLink ? '<b style="color:#6fe9ff">cyan dashes</b> = links it will make' : 'auto-link <b>OFF</b>'} · <b style="color:#ffd84a">yellow</b> = power hookup`;
+    else if (t.kind === 'link') hint.innerHTML = t.from === null ? '<b>LINK:</b> click a building (source or target, either order) · click a glowing link to remove it · <b>Esc</b> cancel' : `<b>LINK:</b> now click the other building for ${BUILDING[this.g.s.byId.get(t.from)?.type ?? 'hq'].name} · <b>Shift</b> to chain · <b>RMB</b> cancel`;
+    else if (t.kind === 'demolish') hint.innerHTML = '<b>DEMOLISH:</b> click a building or a link (it glows red) · <b>100% refund</b> · <b>Esc</b> cancel';
+    else if (t.kind === 'move') hint.innerHTML = t.id === null ? '<b>MOVE:</b> click the building to pick up · <b>Esc</b> cancel' : '<b>MOVE:</b> click the new spot · links in range are kept · <b>RMB</b> cancel';
+    else hint.innerHTML = '<b>WASD</b>/RMB-drag pan · <b>wheel</b> zoom · <b>Q/E</b> or <b>L+R drag</b> rotate · <b>G</b> pipette · <b>Z</b> next problem · <b>Space</b> pause';
   }
 
   refreshSpeed() {
@@ -226,6 +313,7 @@ export class Hud {
       if (f.kind !== 'era') this.toast(f.text, f.kind === 'info' ? 'info' : f.kind);
     }
     this.updateBadges();
+    this.tutorial.update();
     if (this.slowT < 0.25) return;
     const sdt = this.slowT;
     this.slowT = 0;
@@ -241,13 +329,14 @@ export class Hud {
     }
     for (const k of SHOWN_RES) this.lastStock[k] = s.stock[k] ?? 0;
     void sdt;
+    this.rates.sample(s);
     const era = ERAS[s.era - 1];
     this.els.topbar.querySelector('#erachip')!.innerHTML = s.mode === 'sandbox' ? 'SANDBOX' : `ERA ${['I', 'II', 'III', 'IV', 'V'][s.era - 1]} · ${era.name.toUpperCase()}`;
     const res = this.els.res;
     const show = SHOWN_RES.filter((k) => k === 'metal' || k === 'silicon' || (s.stock[k] ?? 0) > 0 || (k === 'chips' && s.era >= 2) || (k === 'accel' && s.era >= 4));
-    const html = show.map((k) => `<div class="res" title="${ITEMS[k].name}">${itemIcon(k, 22)}<div><span class="v">${fmt(s.stock[k] ?? 0)}</span><span class="r">${(this.rate[k] ?? 0) >= 0 ? '+' : ''}${fmt((this.rate[k] ?? 0) * 60)}/min</span></div></div>`).join('')
-      + `<div class="res" title="Research points">${itemIcon('rp', 22)}<div><span class="v">${fmt(s.rp)}</span><span class="r">research</span></div></div>`;
-    res.innerHTML = html;
+    const html = show.map((k) => `<div class="res" data-tipk="res:${k}">${itemIcon(k, 22)}<div><span class="v">${fmt(s.stock[k] ?? 0)}</span><span class="r">${(this.rate[k] ?? 0) >= 0 ? '+' : ''}${fmt((this.rate[k] ?? 0) * 60)}/min</span></div></div>`).join('')
+      + `<div class="res" data-tipk="res:rp">${itemIcon('rp', 22)}<div><span class="v">${fmt(s.rp)}</span><span class="r">+${fmt(this.rates.rpPerMin())}/min</span></div></div>`;
+    if (res.innerHTML !== html) res.innerHTML = html;
     // power
     const gen = s.grids.reduce((a, x) => a + x.avail, 0), dem = s.grids.reduce((a, x) => a + x.demand, 0);
     const cap = s.grids.reduce((a, x) => a + x.capacity, 0), st = s.grids.reduce((a, x) => a + x.stored, 0);
@@ -258,7 +347,9 @@ export class Hud {
     (this.els.topbar.querySelector('#pbar') as HTMLElement).style.width = `${health < 0.98 ? health * 100 : Math.min(100, (dem / Math.max(0.1, gen)) * 100)}%`;
     (this.els.topbar.querySelector('#pbar') as HTMLElement).style.background = health > 0.98 ? '#ffe066' : health > 0.6 ? '#ffb347' : '#ff5a5a';
     (this.els.topbar.querySelector('#pdem') as HTMLElement).style.display = 'none';
-    (this.els.topbar.querySelector('#pbat') as HTMLElement).textContent = cap > 0 ? `🔋 ${Math.round((st / cap) * 100)}% of ${fmt(cap)}` : 'no storage';
+    const frac = cap > 0 ? st / cap : 0;
+    const charging = s.buildings.some((b) => b.status === 'charging'), dis = s.buildings.some((b) => b.status === 'discharging');
+    (this.els.topbar.querySelector('#pbat') as HTMLElement).innerHTML = cap > 0 ? `${batteryIcon(frac, charging ? 'c' : dis ? 'd' : '')} ${Math.round(frac * 100)}% of ${fmt(cap)}` : `${batteryIcon(0, '')} no storage`;
     const p = pue(s);
     (this.els.topbar.querySelector('#ppue') as HTMLElement).textContent = p > 0 ? `PUE ${p.toFixed(2)}` : '';
     // compute
@@ -442,16 +533,28 @@ export class Hud {
       const v = b.outBuf[it] ?? 0, c = outputCap(d, it);
       bufs.push(`<div class="buf">${itemIcon(it, 14)} out <div class="bb"><i style="width:${Math.min(100, (v / c) * 100)}%;background:${ITEMS[it].color}"></i></div> ${v.toFixed(1)}</div>`);
     }
-    const ins = s.links.filter((x) => x.to === b.id).length, outs = s.links.filter((x) => x.from === b.id).length;
-    add('Links', `${ins} in · ${outs} out`);
+    const flowRow = (l: Link, dir: 'in' | 'out') => {
+      const o = s.byId.get(dir === 'in' ? l.from : l.to);
+      const per = l.item === 'compute' ? `${l.rate.toFixed(1)}/s` : `${(l.rate * 60).toFixed(1)}/min`;
+      const st = l.state === 'blocked' ? '<span style="color:#ff5a5a">blocked</span>' : l.state === 'saturated' ? '<span style="color:#ffb347">full</span>' : l.state === 'idle' ? '<span style="color:#93a4c4">idle</span>' : '';
+      return `<div class="flow">${dir === 'in' ? '⇢' : '⇠'} ${itemIcon(l.item, 13)} <b>${per}</b> ${dir === 'in' ? 'from' : 'to'} ${o ? BUILDING[o.type].name : '?'} ${st}</div>`;
+    };
+    const inL = s.links.filter((x) => x.to === b.id), outL = s.links.filter((x) => x.from === b.id);
+    const flows = inL.map((l) => flowRow(l, 'in')).concat(outL.map((l) => flowRow(l, 'out'))).join('') || '<div class="flow dim">No links yet. Use the Link tool (L).</div>';
+    const ratios = ratioLines(s, d);
     el.innerHTML = `<div class="hd"><img src="${thumb(b.type)}"><div><h3>${d.name}</h3><div class="role">${d.desc}</div></div></div>
       <div class="stat ${info.level === 'info' ? 'warn' : info.level}"><b style="font-size:20px">${info.glyph}</b><div><b>${info.title}</b><br>${info.text}</div></div>
       <div class="kv">${kv}</div>${bufs.join('')}
-      <div class="acts">${b.type === 'pod' ? '<button id="i-mode">MODE <kbd>M</kbd></button>' : ''}${b.broken > 0 ? '<button id="i-rep">REPAIR (10 metal) <kbd>R</kbd></button>' : ''}<button id="i-link">⟿ LINK FROM <kbd>L</kbd></button>${b.type !== 'hq' ? '<button id="i-del">✕ DEMOLISH <kbd>Del</kbd></button>' : ''}</div>`;
+      <div class="ptitle" style="margin-top:10px;font-size:15px">FLOWS (live)</div>${flows}
+      ${ratios.length ? `<details class="ratio"><summary>How many do I need?</summary>${ratios.map((r) => `<div>${r}</div>`).join('')}</details>` : ''}
+      ${b.type === 'hq' ? this.coreSummary() : ''}
+      <div class="acts">${b.type === 'hq' ? '<button id="i-stats" data-tip="Full production & power statistics (I)">📊 STATISTICS <kbd>I</kbd></button>' : ''}${b.type === 'pod' ? '<button id="i-mode" data-tip="Cycle Balanced → Training → Inference">MODE <kbd>M</kbd></button>' : ''}${b.broken > 0 ? '<button id="i-rep">REPAIR (10 metal) <kbd>R</kbd></button>' : ''}<button id="i-link" data-tip="Start a link from this building, then click the other building">⟿ CONNECT <kbd>L</kbd></button>${b.type !== 'hq' ? '<button id="i-move" data-tip="Pick it up and place it elsewhere (free)">✥ MOVE <kbd>V</kbd></button><button id="i-del" data-tip="Remove it. Refunds 100%.">✕ DEMOLISH <kbd>Del</kbd></button>' : ''}</div>`;
     const q = (id: string) => el.querySelector(id) as HTMLElement | null;
     q('#i-mode')?.addEventListener('click', () => { cycleMode(s, b.id); this.refreshInspector(true); });
     q('#i-rep')?.addEventListener('click', () => { if (!repair(s, b.id)) audio.play('error'); });
     q('#i-link')?.addEventListener('click', () => g.setTool({ kind: 'link', from: b.id }));
+    q('#i-move')?.addEventListener('click', () => g.setTool({ kind: 'move', id: b.id }));
+    q('#i-stats')?.addEventListener('click', () => this.openStats());
     q('#i-del')?.addEventListener('click', () => g.demolishBuilding(b));
   }
 
@@ -465,22 +568,32 @@ export class Hud {
     t.style.top = Math.min(window.innerHeight - hh - 10, y + 18) + 'px';
   }
   hideTip() { this.els.tip.style.display = 'none'; }
-  ghostTip(x: number, y: number, type: string, c: PlaceCheck, tx: number, ty: number) {
+  ghostTip(x: number, y: number, type: string, c: PlaceCheck, tx: number, ty: number, links?: [number, number][]) {
     const s = this.g.s, d = BUILDING[type];
-    let extra = '';
-    if (d.deposit && c.richness !== undefined && c.ok) extra = `<br>Deposit coverage <b>${Math.round(c.richness * 100)}%</b>, so output is ×${c.richness.toFixed(2)}`;
-    if (d.gen === 'wind') extra = `<br>Local wind <b>×${s.world.wind[idx(s.world, tx, ty)].toFixed(2)}</b>`;
+    const extra: string[] = [];
+    if (d.deposit && c.richness !== undefined && c.ok) extra.push(`Deposit coverage <b>${Math.round(c.richness * 100)}%</b> → output ×${c.richness.toFixed(2)}`);
+    if (d.gen === 'wind') extra.push(`Local wind <b>×${s.world.wind[idx(s.world, tx, ty)].toFixed(2)}</b>`);
     const biome = s.world.biome[idx(s.world, Math.max(0, tx), Math.max(0, ty))];
-    if (d.it && biome === BIOME.TUNDRA) extra += '<br>Cold climate: free-air cooling helps';
-    if (c.ok && d.power < 0 && !d.node && !coveredAt(s, tx, ty, d.size)) extra += `<br><span class="bad">⚡ No grid here. Add a Power Pole within 4.5 tiles</span>`;
-    this.tipAt(x, y, `<b>${d.name}</b><br>${c.ok ? '<span class="good">✓ Valid placement</span>' : `<span class="bad">✕ ${c.reason}</span>`}${extra}<br>${costHtml(s, c.cost)}`);
+    if (d.it && biome === BIOME.TUNDRA) extra.push('Cold climate: free-air cooling helps');
+    if (c.platform) extra.push(`🧱 Platform levels ${c.platform} tile-step${c.platform > 1 ? 's' : ''} (+${c.platform * 2} metal)`);
+    if (c.ok && d.power < 0 && !d.node) extra.push(coveredAt(s, tx, ty, d.size) ? '<span class="good">⚡ Connects to the grid (yellow line)</span>' : '<span class="bad">⚡ No grid here: add a Power Pole within 4.5 tiles</span>');
+    if (links?.length) extra.push(`<span style="color:#6fe9ff">⟿ Auto-links: ${links.map(([f, t]) => { const o = s.byId.get(f === -1 ? t : f); return o ? (f === -1 ? '→ ' : '← ') + BUILDING[o.type].name : ''; }).join(', ')}</span>`);
+    else if (c.ok && (d.inputs || d.outputs) && s.autoLink) extra.push('<span class="dim">No partner in range to auto-link yet</span>');
+    this.tipAt(x, y, `<b>${d.name}</b><br>${c.ok ? '<span class="good">✓ Valid placement</span>' : `<span class="bad">✕ ${c.reason}</span>`}${extra.map((e) => '<br>' + e).join('')}<br>${costHtml(s, c.cost)}`);
+  }
+  linkHoverTip(x: number, y: number, l: Link, tool: string) {
+    const s = this.g.s;
+    const A = s.byId.get(l.from), B = s.byId.get(l.to);
+    const per = l.item === 'compute' ? `${l.rate.toFixed(1)}/s` : `${(l.rate * 60).toFixed(1)}/min`;
+    this.tipAt(x, y, `<b>${LINKS[l.kind].name}</b>: ${itemIcon(l.item, 13)} ${ITEMS[l.item].name} · <b>${per}</b><br>${A ? BUILDING[A.type].name : '?'} → ${B ? BUILDING[B.type].name : '?'} · ${l.state}<br><span class="${tool === 'select' ? 'dim' : 'bad'}">${tool === 'select' ? 'Click to inspect' : 'Click to remove this link'}</span>`);
   }
   linkTip(x: number, y: number, from: number, b: Building | null) {
     const s = this.g.s;
     const A = s.byId.get(from);
     if (!A) return;
-    if (!b || b.id === from) { this.tipAt(x, y, `<b>Link from ${BUILDING[A.type].name}</b><br>Click a destination`); return; }
-    const c = checkLink(s, from, b.id);
+    if (!b || b.id === from) { this.tipAt(x, y, `<b>Link: ${BUILDING[A.type].name}</b><br>Now click the other building (either direction works)`); return; }
+    let c = checkLink(s, from, b.id);
+    if (!c.ok) { const r = checkLink(s, b.id, from); if (r.ok) c = r; }
     this.tipAt(x, y, c.ok ? `<b>${LINKS[c.kind!].name} → ${BUILDING[b.type].name}</b><br><span class="good">✓ ${ITEMS[c.item!].name}, ${c.length!.toFixed(1)} tiles, cap ${LINKS[c.kind!].capacity}/s</span>` : `<b>→ ${BUILDING[b.type].name}</b><br><span class="bad">✕ ${c.reason}</span>`);
   }
   buildingTip(x: number, y: number, b: Building) {
@@ -548,40 +661,105 @@ export class Hud {
   blockingModal() { return this.openModal !== null && this.openModal !== 'score'; }
   closeModals() {
     if (this.openModal === 'title') return;
-    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save']) this.els[id].classList.remove('show');
+    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats']) this.els[id].classList.remove('show');
     if (this.openModal) audio.play('close');
     this.openModal = null;
   }
   private show(id: string) {
-    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save']) this.els[m].classList.toggle('show', m === id);
+    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats']) this.els[m].classList.toggle('show', m === id);
     this.openModal = id;
     audio.play('open');
   }
 
-  openGuide() {
+  openGuide(ch?: string) {
     const s = this.g.s;
-    const unlocked = new Set<string>();
-    for (const e of ERAS.slice(0, s.mode === 'sandbox' ? 5 : s.era)) for (const gid of e.guide) unlocked.add(gid);
-    for (const e of ERAS) for (const o of e.objectives) if (o.guide && (s.done[o.id] || e.id <= s.era)) unlocked.add(o.guide);
+    if (ch) this.codexCh = ch;
     const m = this.els.guide;
-    m.innerHTML = `<div class="mcard panel"><h1>FIELD GUIDE</h1><div class="lede">Short notes on the real infrastructure behind AI. The campaign is fiction, but these trade-offs are real. New entries unlock as you advance.</div><div class="grid3">${GUIDE.map((e) => `<div class="gentry${unlocked.has(e.id) ? '' : ' locked'}"><h4>${e.icon} ${unlocked.has(e.id) ? e.title : 'Locked'}</h4><p>${e.body}</p></div>`).join('')}</div><div class="mact"><button class="primary" data-x>BACK</button></div></div>`;
+    const cur = CHAPTERS.find((c) => c.id === this.codexCh) ?? CHAPTERS[0];
+    m.innerHTML = `<div class="mcard panel codex"><div class="cnav"><h1>CODEX</h1>${CHAPTERS.map((c) => `<button class="${c.id === cur.id ? 'on' : ''}" data-ch="${c.id}"><span>${c.icon}</span> ${c.title}</button>`).join('')}<div style="flex:1"></div><button data-tut>↻ RESTART TUTORIAL</button></div>
+      <div class="cbody"><h1 style="font-size:34px">${cur.icon} ${cur.title}</h1>${cur.html(s)}<div class="mact"><button class="primary" data-x>BACK</button></div></div></div>`;
+    m.querySelectorAll<HTMLElement>('[data-ch]').forEach((b) => (b.onclick = () => { audio.play('click'); this.openGuide(b.dataset.ch); }));
     (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
-    this.show('guide');
+    (m.querySelector('[data-tut]') as HTMLElement).onclick = () => { this.closeModals(); this.tutorial.start(); };
+    if (this.openModal !== 'guide') this.show('guide');
+  }
+
+  coreSummary(): string {
+    const s = this.g.s;
+    const top = (['metal', 'silicon', 'chips', 'accel'] as ItemId[]).filter((k) => (s.stock[k] ?? 0) > 0 || this.rates.perMin('produced', k) > 0);
+    return `<div class="ptitle" style="margin-top:10px;font-size:15px">ECONOMY (per min)</div><div class="kv">${top.map((k) => `<span class="k">${itemIcon(k, 13)} ${ITEMS[k].name}</span><span class="v"><span style="color:#5dff9a">+${fmt(this.rates.perMin('delivered', k))}</span> / <span style="color:#ff8a8a">−${fmt(this.rates.perMin('spent', k) + this.rates.perMin('consumed', k))}</span></span>`).join('')}</div>`;
+  }
+
+  openStats() {
+    const s = this.g.s;
+    const m = this.els.stats;
+    const render = () => {
+      const r = this.rates;
+      const rows = (r.items() as ItemId[]).filter((k) => (s.stock[k] ?? 0) > 0 || (s.stats.produced[k] ?? 0) > 0).map((k) => {
+        const p = r.perMin('produced', k), c = r.perMin('consumed', k), d = r.perMin('delivered', k), sp = r.perMin('spent', k);
+        const net = p - c - (k === 'compute' ? 0 : 0);
+        const isC = k === 'compute';
+        const u = (v: number) => isC ? `${fmt(v / 60)}/s` : `${fmt(v)}`;
+        return `<tr><td>${itemIcon(k, 16)} ${ITEMS[k].name}</td><td>${isC ? '—' : fmt(s.stock[k] ?? 0)}</td><td class="g">+${u(p)}</td><td class="r">−${u(c)}</td><td>${isC ? '—' : '+' + fmt(d)}</td><td>${isC ? '—' : '−' + fmt(sp)}</td><td class="${net >= 0 ? 'g' : 'r'}">${net >= 0 ? '+' : ''}${u(net)}</td></tr>`;
+      }).join('');
+      const pb = powerBreakdown(s);
+      const pr = (o: Record<string, number>, cls: string) => Object.entries(o).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<tr><td>${k}</td><td class="${cls}">${fmt(v)}</td><td><div class="sbar"><i class="${cls}" style="width:${Math.min(100, (v / Math.max(1, ...Object.values(o))) * 100)}%"></i></div></td></tr>`).join('');
+      const gen = Object.values(pb.gen).reduce((a, b) => a + b, 0), use = Object.values(pb.use).reduce((a, b) => a + b, 0);
+      m.innerHTML = `<div class="mcard panel" style="width:min(1280px,94vw)"><h1>STATISTICS</h1><div class="lede">Live rates over the last sim-minute. <b>Produced</b> = made by machines. <b>Consumed</b> = eaten by machines. <b>Delivered</b> = arrived in the stockpile. <b>Spent</b> = construction.</div>
+        <div class="sgrid"><div><h3>ITEMS (per minute)</h3><table class="stab"><tr><th>Item</th><th>Stock</th><th>Produced</th><th>Consumed</th><th>Delivered</th><th>Spent</th><th>Net</th></tr>${rows}</table>
+        <h3 style="margin-top:16px">RESEARCH</h3><div class="kv"><span class="k">Earning</span><span class="v">+${fmt(r.rpPerMin())}/min</span><span class="k">Banked</span><span class="v">${fmt(s.rp)}</span></div></div>
+        <div><h3>POWER NOW</h3><table class="stab"><tr><th>Producer</th><th colspan="2">${fmt(gen)}</th></tr>${pr(pb.gen, 'g')}<tr><th>Consumer</th><th colspan="2">${fmt(use)}</th></tr>${pr(pb.use, 'r')}<tr><td>Batteries charging / discharging</td><td colspan="2">${fmt(pb.charge)} / ${fmt(pb.discharge)}</td></tr></table>
+        <h3 style="margin-top:16px">COMPUTE</h3><div class="kv"><span class="k">Produced</span><span class="v">${fmt(s.stats.computeRate)}/s</span><span class="k">Used</span><span class="v">${fmt(s.stats.computeUsed)}/s</span><span class="k">Training</span><span class="v">${fmt(s.stats.trainRate)}/s</span><span class="k">Inference</span><span class="v">${fmt(s.stats.inferenceRate)}/s</span><span class="k">PUE</span><span class="v">${pue(s) > 0 ? pue(s).toFixed(2) : '—'}</span></div>
+        <h3 style="margin-top:16px">BUILDINGS</h3><div class="kv">${Object.entries(s.buildings.reduce((a, b) => { a[BUILDING[b.type].name] = (a[BUILDING[b.type].name] ?? 0) + 1; return a; }, {} as Record<string, number>)).map(([k, v]) => `<span class="k">${k}</span><span class="v">${v}</span>`).join('')}</div></div></div>
+        <div class="mact"><button data-c>OPEN RATIOS (CODEX)</button><button class="primary" data-x>BACK</button></div></div>`;
+      (m.querySelector('[data-x]') as HTMLElement).onclick = () => { clearInterval(timer); this.closeModals(); };
+      (m.querySelector('[data-c]') as HTMLElement).onclick = () => { clearInterval(timer); this.openGuide('chains'); };
+    };
+    render();
+    const timer = window.setInterval(() => { if (this.openModal !== 'stats') { clearInterval(timer); return; } render(); }, 1000);
+    this.show('stats');
   }
 
   openTech() {
     const s = this.g.s;
     const m = this.els.tech;
     const render = () => {
-      const col = (branch: string, name: string, color: string) => `<div class="col"><h3 style="color:${color}">${name}</h3>${TECHS.filter((t) => t.branch === branch).map((t) => {
+      const branches: [string, string, string][] = [['efficiency', 'EFFICIENCY', '#5dff9a'], ['capacity', 'CAPACITY', '#6fe9ff'], ['reliability', 'RELIABILITY', '#ffb347']];
+      const CW = 222, RH = 118, X0 = 150, Y0 = 50;
+      const pos: Record<string, { x: number; y: number }> = {};
+      // layout: column = era, row = branch; stack multiple techs in the same cell
+      // column = dependency depth (so every chain reads left → right), row = branch; siblings stack
+      const depth: Record<string, number> = {};
+      const dep = (id: string): number => { if (depth[id] !== undefined) return depth[id]; const t = TECH[id]; return (depth[id] = t.requires?.length ? 1 + Math.max(...t.requires.map(dep)) : 0); };
+      const cellCount: Record<string, number> = {};
+      let maxCol = 0, rowsUsed = [1, 1, 1];
+      for (const t of TECHS) {
+        const row = branches.findIndex((b) => b[0] === t.branch);
+        const col = dep(t.id); maxCol = Math.max(maxCol, col);
+        const key = `${row}:${col}`;
+        const k = cellCount[key] ?? 0; cellCount[key] = k + 1;
+        rowsUsed[row] = Math.max(rowsUsed[row], k + 1);
+        pos[t.id] = { x: X0 + col * (CW - 30), y: k * 66, row } as any;
+      }
+      const rowY = [Y0, Y0 + rowsUsed[0] * 66 + 50, 0];
+      rowY[2] = rowY[1] + rowsUsed[1] * 66 + 50;
+      for (const t of TECHS) { const p = pos[t.id] as any; p.y += rowY[p.row]; }
+      const W = X0 + (maxCol + 1) * (CW - 30) + 20, H = rowY[2] + rowsUsed[2] * 66 + 20;
+      const lines = TECHS.flatMap((t) => (t.requires ?? []).map((r) => { const a = pos[r], b = pos[t.id]; const done = s.techs.includes(r); return `<path d="M${a.x + 172} ${a.y + 26} C ${a.x + 200} ${a.y + 26}, ${b.x - 30} ${b.y + 26}, ${b.x} ${b.y + 26}" stroke="${done ? '#5dff9a' : '#4a5a7a'}" stroke-width="${done ? 3 : 2}" fill="none" marker-end="url(#arr)"/>`; })).join('');
+      const nodes = TECHS.map((t) => {
         const done = s.techs.includes(t.id);
         const c = canResearch(s, t.id);
+        const col = branches.find((b) => b[0] === t.branch)![2];
         const cls = done ? 'done' : c.ok ? 'avail' : t.era > s.era && s.mode !== 'sandbox' ? 'locked' : '';
-        return `<div class="tnode ${cls}" data-t="${t.id}"><div class="n"><span>${t.name}</span><span>${done ? '✓' : `${itemIcon('rp', 16)} ${t.cost}`}</span></div><div class="d">${t.desc}</div><div class="r">${done ? 'Researched' : c.ok ? 'Click to research' : c.reason}</div></div>`;
-      }).join('')}</div>`;
-      m.innerHTML = `<div class="mcard panel"><h1>TECHNOLOGY</h1><div class="lede">You have <b style="color:#b98cff">${fmt(s.rp)} research</b>. Labs turn compute into research, and the Core adds a small trickle. Each branch trades something different, and none is simply "best".</div><div class="tech">${col('efficiency', 'EFFICIENCY', '#5dff9a')}${col('capacity', 'CAPACITY', '#6fe9ff')}${col('reliability', 'RELIABILITY', '#ffb347')}</div><div class="mact"><button class="primary" data-x>BACK</button></div></div>`;
+        return `<div class="tnode2 ${cls}" data-t="${t.id}" data-tipk="tech:${t.id}" style="left:${pos[t.id].x}px;top:${pos[t.id].y}px;border-color:${done ? '#5dff9a' : c.ok ? col : ''}"><div class="n">${t.name}</div><div class="c">${done ? '✓ researched' : `${itemIcon('rp', 13)} ${t.cost}`} · Era ${['I', 'II', 'III', 'IV', 'V'][t.era - 1]}${t.era > s.era && s.mode !== 'sandbox' ? ' 🔒' : ''}</div></div>`;
+      }).join('');
+      const eraHdr = '';
+      const rowHdr = branches.map(([, name, col], i) => `<div class="trow" style="top:${rowY[i] + 12}px;color:${col}">${name}</div>`).join('');
+      m.innerHTML = `<div class="mcard panel" style="width:min(1320px,96vw)"><h1>TECHNOLOGY</h1><div class="lede">You have <b style="color:#b98cff">${fmt(s.rp)} research</b> (+${fmt(this.rates.rpPerMin())}/min). Arrows show prerequisites. Glowing nodes are ready to research: click one. Each branch trades something different.</div>
+        <div class="ttree" style="width:${W}px;height:${H}px"><svg width="${W}" height="${H}"><defs><marker id="arr" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8z" fill="#7a8aaa"/></marker></defs>${lines}</svg>${eraHdr}${rowHdr}${nodes}</div>
+        <div class="mact"><button class="primary" data-x>BACK</button></div></div>`;
       (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
-      m.querySelectorAll<HTMLElement>('.tnode').forEach((n) => (n.onclick = () => { if (research(s, n.dataset.t!)) render(); else audio.play('error'); }));
+      m.querySelectorAll<HTMLElement>('.tnode2').forEach((n) => (n.onclick = () => { if (research(s, n.dataset.t!)) { this.hideTip(); render(); } else audio.play('error'); }));
     };
     render();
     this.show('tech');

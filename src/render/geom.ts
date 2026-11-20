@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
+/** detail multiplier for round primitives (rounder silhouettes, still low-poly in spirit) */
+const D = (n: number) => (n <= 6 ? n : Math.round(n * 1.6));
+
 /** Tiny geometry builder: appends coloured flat-shaded primitives and merges them. */
 export class GB {
   private parts: THREE.BufferGeometry[] = [];
@@ -32,26 +35,26 @@ export class GB {
     return this.add(new THREE.BoxGeometry(w, h, d), color, GB.mat(x, y + h / 2, z, rx, ry, rz));
   }
   cyl(rt: number, rb: number, h: number, x: number, y: number, z: number, color: THREE.ColorRepresentation, seg = 8, rx = 0, rz = 0) {
-    return this.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, GB.mat(x, y + h / 2, z, rx, 0, rz));
+    return this.add(new THREE.CylinderGeometry(rt, rb, h, D(seg)), color, GB.mat(x, y + h / 2, z, rx, 0, rz));
   }
   /** cylinder centred at (x,y,z) (not base-anchored) */
   cylC(rt: number, rb: number, h: number, x: number, y: number, z: number, color: THREE.ColorRepresentation, seg = 8, rx = 0, ry = 0, rz = 0) {
-    return this.add(new THREE.CylinderGeometry(rt, rb, h, seg), color, GB.mat(x, y, z, rx, ry, rz));
+    return this.add(new THREE.CylinderGeometry(rt, rb, h, D(seg)), color, GB.mat(x, y, z, rx, ry, rz));
   }
   cone(r: number, h: number, x: number, y: number, z: number, color: THREE.ColorRepresentation, seg = 6) {
     return this.add(new THREE.ConeGeometry(r, h, seg), color, GB.mat(x, y + h / 2, z));
   }
   sphere(r: number, x: number, y: number, z: number, color: THREE.ColorRepresentation, w = 8, h = 6, sy = 1) {
-    return this.add(new THREE.SphereGeometry(r, w, h), color, GB.mat(x, y, z, 0, 0, 0, 1, sy, 1));
+    return this.add(new THREE.SphereGeometry(r, D(w), D(h)), color, GB.mat(x, y, z, 0, 0, 0, 1, sy, 1));
   }
   dome(r: number, x: number, y: number, z: number, color: THREE.ColorRepresentation, seg = 10) {
-    return this.add(new THREE.SphereGeometry(r, seg, 5, 0, Math.PI * 2, 0, Math.PI / 2), color, GB.mat(x, y, z));
+    return this.add(new THREE.SphereGeometry(r, D(seg), 7, 0, Math.PI * 2, 0, Math.PI / 2), color, GB.mat(x, y, z));
   }
   torus(r: number, t: number, x: number, y: number, z: number, color: THREE.ColorRepresentation, rx = Math.PI / 2, seg = 16) {
-    return this.add(new THREE.TorusGeometry(r, t, 6, seg), color, GB.mat(x, y, z, rx));
+    return this.add(new THREE.TorusGeometry(r, t, 8, D(seg)), color, GB.mat(x, y, z, rx));
   }
   lathe(pts: [number, number][], x: number, y: number, z: number, color: THREE.ColorRepresentation, seg = 12) {
-    return this.add(new THREE.LatheGeometry(pts.map(([a, b]) => new THREE.Vector2(a, b)), seg), color, GB.mat(x, y, z));
+    return this.add(new THREE.LatheGeometry(pts.map(([a, b]) => new THREE.Vector2(a, b)), D(seg)), color, GB.mat(x, y, z));
   }
   oct(r: number, x: number, y: number, z: number, color: THREE.ColorRepresentation, sy = 1.6) {
     return this.add(new THREE.OctahedronGeometry(r), color, GB.mat(x, y, z, 0, 0.4, 0, 1, sy, 1));

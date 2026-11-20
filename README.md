@@ -49,19 +49,25 @@ The scenarios are `title`, `era1` through `era5` and `stress`. Each one plays he
 npx tsx scripts/playtest.ts
 ```
 
+```bash
+npx tsx scripts/uicheck.ts
+```
+
+`uicheck.ts` reviews the UI at 2560×1440: tutorial, tooltips, codex, stats, tech tree, auto-link and link previews, inspector.
+
 This plays early Era 1 with real mouse clicks and key presses through the actual UI, and logs what a new player would see.
 
 ## Controls
 
 | | |
 |---|---|
-| Pan / zoom / rotate | WASD or drag with the right mouse button / mouse wheel (zooms to the cursor) / Q, E |
-| Build | Click a palette item or press 1–9. LMB places, dragging paints small buildings, RMB or Esc cancels |
-| Link / demolish | L (source → destination; Shift chains links; clicking a link removes it) / X, or Del on the selection |
-| Overlays | P power · H heat · N compute network · O logistics flow |
-| Panels | T tech · J field guide · Esc menu (settings, save/load) |
-| Navigation | Z next problem · C Core · F focus selection |
-| Misc | M pod mode · R repair · Space pause · +/− speed · F3 performance stats |
+| Camera | WASD or drag with the right mouse button to pan · the wheel zooms to the cursor · Q/E rotate 90° · **LMB + RMB drag** (or Alt + RMB) rotates freely |
+| Build | Build menu, or the **hotbar** `1`–`0`. Hover a build item and press a number to assign it to that slot. LMB places, dragging paints small buildings, RMB or Esc cancels |
+| Tools (bottom bar) | `L` link (click two buildings in either order, or click a link to remove it) · `V` move · `X` demolish (100% refund) · auto-link toggle · `G` pipette |
+| Info | Hover anything for rich tooltips · `I` statistics · `J` codex · `T` tech tree · `P H N O` overlays · `Z` next problem · `C` Core |
+| Misc | `M` pod mode · `R` repair · Space pause · +/− speed · F3 performance stats |
+
+A new campaign starts **paused** and opens an interactive tutorial (13 steps, with a spotlight on the exact button or map spot). You can restart it from the Codex.
 
 ## Project map
 

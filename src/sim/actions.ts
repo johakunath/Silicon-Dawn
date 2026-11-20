@@ -47,7 +47,7 @@ export function missingCost(s: GameState, c: Cost): string {
   return parts.join(', ');
 }
 function pay(s: GameState, c: Cost) {
-  for (const [k, v] of Object.entries(c) as [ItemId, number][]) s.stock[k] = (s.stock[k] ?? 0) - v;
+  for (const [k, v] of Object.entries(c) as [ItemId, number][]) { s.stock[k] = (s.stock[k] ?? 0) - v; s.stats.spent[k] = (s.stats.spent[k] ?? 0) + v; }
 }
 
 export const PLATFORM_COST = 2; // metal per tile per terrace raised

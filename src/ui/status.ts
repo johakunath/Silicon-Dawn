@@ -28,7 +28,7 @@ export function explain(s: GameState, b: Building): StatusInfo {
     case 'calm': return { level: 'info', glyph: '≈', title: 'Low wind', text: 'Output follows the wind. Higher ground and the tundra are windier.' };
     case 'charging': return { level: 'ok', glyph: '▲', title: 'Charging', text: 'Storing surplus energy.' };
     case 'discharging': return { level: 'warn', glyph: '▼', title: 'Discharging', text: 'Covering a supply deficit. It will run dry if the deficit lasts.' };
-    case 'idle': return { level: 'info', glyph: '○', title: 'Idle', text: d.battery ? 'Empty. It needs surplus power to charge.' : 'Waiting.' };
+    case 'idle': return { level: 'info', glyph: '○', title: 'Idle', text: d.battery ? 'Empty. It needs surplus power to charge.' : 'Just built: it starts on the next tick (is time paused? press Space).' };
     default: return { level: 'ok', glyph: '✓', title: 'Running', text: d.short };
   }
 }

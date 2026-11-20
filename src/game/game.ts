@@ -3,7 +3,8 @@ import { audio } from '../audio/audio';
 import { BUILDING } from '../sim/data/buildings';
 import { ERAS } from '../sim/data/eras';
 import { ITEMS } from '../sim/data/items';
-import { addLink, checkLink, checkPlace, cycleMode, demolish, place, removeLink, repair } from '../sim/actions';
+import { addLink, checkLink, checkPlace, cycleMode, demolish, moveBuilding, place, previewAutoLinks, removeLink, repair } from '../sim/actions';
+import { coveredAt, rebuildGrids } from '../sim/power';
 import { loadFromString, saveToString } from '../sim/save';
 import { step } from '../sim/sim';
 import { GameState, TICK, createState, dayBias, hq, timeOfDay } from '../sim/state';
@@ -26,7 +27,9 @@ const FIRST_TIPS: Record<string, string> = {
   engine: 'The Dawn Engine is fiction. Feed it compute over fiber and accelerators from a Depot.',
 };
 
-export type Tool = { kind: 'select' } | { kind: 'build'; type: string } | { kind: 'link'; from: number | null } | { kind: 'demolish' };
+const DEMOLISH_CURSOR = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='12' fill='%23ff4a4a' stroke='%23000' stroke-width='2'/%3E%3Cpath d='M10 10l12 12M22 10L10 22' stroke='%23fff' stroke-width='3.5' stroke-linecap='round'/%3E%3C/svg%3E") 16 16, not-allowed`;
+
+export type Tool = { kind: 'select' } | { kind: 'build'; type: string } | { kind: 'link'; from: number | null } | { kind: 'demolish' } | { kind: 'move'; id: number | null };
 
 export interface Settings { volume: number; music: number; muted: boolean; reducedMotion: boolean; edgePan: boolean; showFps: boolean; uiScale: number }
 
@@ -65,6 +68,20 @@ export class Game {
   private cinematic: { t: number; dur: number; from: number; to: number } | null = null;
   finale = 0; // 0..1 after ignition
   private nightSeen = false;
+  private previewKey = '';
+  private previewCache: [number, number][] = [];
+  private nearestNodeCovering(x: number, y: number, size: number): Building | null {
+    let best: Building | null = null, bd = Infinity;
+    for (const n of this.s.buildings) {
+      const dn = BUILDING[n.type];
+      if (!dn.node) continue;
+      const nx = n.x + dn.size / 2, ny = n.y + dn.size / 2;
+      const dx = Math.max(x - nx, 0, nx - (x + size)), dy = Math.max(y - ny, 0, ny - (y + size));
+      const dd = Math.hypot(dx, dy);
+      if (dd <= dn.node.radius && dd < bd) { bd = dd; best = n; }
+    }
+    return best;
+  }
   private tipsSeen = new Set<string>();
 
   constructor(canvas: HTMLCanvasElement, ui: HTMLElement) {
@@ -74,6 +91,7 @@ export class Game {
     this.focusCore(true);
     this.hud = new Hud(this, ui);
     this.applySettings();
+    window.addEventListener('resize', () => this.applySettings());
     this.bindInput(canvas);
     (window as any).__sd = this; // debug / screenshot hooks
   }
@@ -85,7 +103,16 @@ export class Game {
     this.view.links.reducedMotion = st.reducedMotion;
     this.view.particles.reduced = st.reducedMotion;
     document.documentElement.style.setProperty('--fs', `${18 * st.uiScale}px`);
-    (document.getElementById('ui') as HTMLElement).style.zoom = String(st.uiScale);
+    // big monitors (1440p/4K): scale the whole UI up so text stays comfortably readable
+    const auto = window.innerWidth >= 3400 ? 1.5 : window.innerWidth >= 2400 ? 1.2 : 1;
+    const z = st.uiScale * auto;
+    const ui = document.getElementById('ui') as HTMLElement;
+    ui.style.zoom = '';
+    // scale via transform on a shrunken box: layout fits the screen and rects stay accurate
+    ui.style.transformOrigin = '0 0';
+    ui.style.transform = z !== 1 ? `scale(${z})` : '';
+    ui.style.width = `${100 / z}vw`; ui.style.height = `${100 / z}vh`; ui.style.right = 'auto'; ui.style.bottom = 'auto';
+    (document.getElementById('ovl') as HTMLElement).style.setProperty('--z', String(st.uiScale * auto));
     try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(st)); } catch { /* ignore */ }
   }
 
@@ -96,11 +123,17 @@ export class Game {
     this.tool = { kind: 'select' };
     this.focusCore(true);
     this.started = true;
-    this.paused = false;
+    rebuildGrids(this.s); step(this.s); // compute power & status once so the HUD isn't empty while paused
+    this.paused = mode === 'campaign'; // campaign starts paused: look around, plan, then press Space
     this.finale = 0;
     this.hud.onNewState();
     this.hud.refreshSpeed();
-    if (mode === 'campaign') this.hud.showEraBanner(1);
+    if (mode === 'campaign') {
+      this.hud.showEraBanner(1);
+      let done = false; try { done = localStorage.getItem('sd_tutorial_done') === '1'; } catch { /* */ }
+      if (!done) setTimeout(() => this.hud.tutorial.start(), 2600);
+      else this.hud.toast('Paused: press Space when ready. Press J for the Codex.', 'info');
+    }
   }
 
   loadJson(json: string): boolean {
@@ -114,6 +147,7 @@ export class Game {
       this.started = true;
       this.paused = false;
       this.finale = s.engine.ignited ? 1 : 0;
+      rebuildGrids(s); step(s);
       this.hud.onNewState();
       this.hud.refreshSpeed();
       this.hud.toast('Game loaded', 'good');
@@ -163,8 +197,13 @@ export class Game {
   // ───────── tools ─────────
   setTool(t: Tool) {
     this.tool = t;
-    this.view.placingType = t.kind === 'build' ? t.type : null;
-    if (t.kind !== 'build') this.view.setGhost(null);
+    this.view.placingType = t.kind === 'build' ? t.type : t.kind === 'move' && t.id !== null ? this.s.byId.get(t.id)?.type ?? null : null;
+    if (t.kind !== 'build' && !(t.kind === 'move' && t.id !== null)) this.view.setGhost(null);
+    this.view.setPreview([]);
+    this.view.links.hoverLink = -1;
+    this.view.buildings.dangerId = -1;
+    const cv = this.rig.renderer.domElement;
+    cv.style.cursor = t.kind === 'demolish' ? DEMOLISH_CURSOR : t.kind === 'link' ? 'crosshair' : t.kind === 'move' ? 'move' : t.kind === 'build' ? 'copy' : 'default';
     this.view.refreshOverlay(true);
     this.hud.refreshTool();
   }
@@ -279,14 +318,21 @@ export class Game {
       case '-': case '_': this.setSpeed(Math.max(1, this.speed / 2)); break;
       case 'q': this.yawTarget = (Math.round((this.yawTarget - Math.PI / 4) / (Math.PI / 2)) + 1) * (Math.PI / 2) + Math.PI / 4; break;
       case 'e': this.yawTarget = (Math.round((this.yawTarget - Math.PI / 4) / (Math.PI / 2)) - 1) * (Math.PI / 2) + Math.PI / 4; break;
-      case 'l': this.setTool({ kind: 'link', from: this.view.selected?.id ?? null }); audio.play('click'); break;
-      case 'x': this.setTool({ kind: 'demolish' }); audio.play('click'); break;
+      case 'l': this.setTool(this.tool.kind === 'link' ? { kind: 'select' } : { kind: 'link', from: null }); audio.play('click'); break;
+      case 'x': this.setTool(this.tool.kind === 'demolish' ? { kind: 'select' } : { kind: 'demolish' }); audio.play('click'); break;
+      case 'v': this.setTool(this.tool.kind === 'move' ? { kind: 'select' } : { kind: 'move', id: null }); audio.play('click'); break;
+      case 'g': { // pipette: build more of what's under the cursor
+        const b = this.view.hovered ?? this.view.selected;
+        if (b && b.type !== 'hq') { this.setTool({ kind: 'build', type: b.type }); audio.play('click'); }
+        break;
+      }
       case 'delete': if (this.view.selected) { this.demolishBuilding(this.view.selected); } break;
       case 'p': this.setOverlay('power'); break;
       case 'h': this.setOverlay('heat'); break;
       case 'n': this.setOverlay('network'); break;
       case 'o': this.setOverlay('logistics'); break;
       case 't': this.hud.openTech(); break;
+      case 'i': this.hud.openStats(); break;
       case 'j': case 'f1': this.hud.openGuide(); e.preventDefault(); break;
       case 'c': case 'home': this.focusCore(); break;
       case 'f': if (this.view.selected) { const b = this.view.selected; const d = BUILDING[b.type]; this.focus(b.x + d.size / 2, b.y + d.size / 2); } break;
@@ -295,7 +341,11 @@ export class Game {
       case 'r': if (this.view.selected && this.view.selected.broken > 0) repair(this.s, this.view.selected.id); break;
       case 'f3': this.settings.showFps = !this.settings.showFps; this.applySettings(); e.preventDefault(); break;
       default:
-        if (/^[1-9]$/.test(k)) this.hud.hotkey(Number(k));
+        if (/^[0-9]$/.test(k)) {
+          const slot = k === '0' ? 9 : Number(k) - 1;
+          if (e.ctrlKey || this.hud.hoveredPaletteType) { this.hud.assignHotbar(slot, e.ctrlKey && this.tool.kind === 'build' ? this.tool.type : this.hud.hoveredPaletteType); e.preventDefault(); }
+          else this.hud.useHotbar(slot);
+        }
     }
   }
 
@@ -344,6 +394,23 @@ export class Game {
       if (b) { this.demolishBuilding(b); return; }
       const g = this.rig.screenToGround(px, py, 1.4);
       if (g) { const l = this.view.links.pick(g.x, g.z, 0.6); if (l) removeLink(s, l.id); }
+      return;
+    }
+    if (t.kind === 'move') {
+      if (t.id === null) {
+        const b = this.view.buildingAt(px, py);
+        if (!b || b.type === 'hq') { if (b) { audio.play('error'); this.hud.toast('The Command Core stays where it is', 'warn'); } return; }
+        this.setTool({ kind: 'move', id: b.id });
+        audio.play('select');
+        return;
+      }
+      const mb = s.byId.get(t.id);
+      const tile = this.view.tileAt(px, py);
+      if (!mb || !tile) return;
+      const d = BUILDING[mb.type];
+      const x = tile[0] - Math.floor((d.size - 1) / 2), y = tile[1] - Math.floor((d.size - 1) / 2);
+      if (moveBuilding(s, mb.id, x, y)) { audio.play('place', 2); this.setTool({ kind: 'move', id: null }); }
+      else { audio.play('error'); this.hud.toast(checkPlace(s, mb.type, x, y, mb).reason ?? 'Cannot move here', 'warn'); }
       return;
     }
     if (t.kind === 'link') {
@@ -483,19 +550,65 @@ export class Game {
     const s = this.s;
     const t = this.tool;
     if (this.hud.pointerOverUi) { this.view.setGhost(null); this.view.hovered = null; return; }
-    if (t.kind === 'build') {
+    const ghostType = t.kind === 'build' ? t.type : t.kind === 'move' && t.id !== null ? s.byId.get(t.id)?.type : undefined;
+    if (ghostType) {
       const tile = this.view.tileAt(this.mouse.x, this.mouse.y);
-      if (!tile) { this.view.setGhost(null); this.hud.hideTip(); return; }
-      const d = BUILDING[t.type];
+      if (!tile) { this.view.setGhost(null); this.view.setPreview([]); this.hud.hideTip(); return; }
+      const d = BUILDING[ghostType];
       const x = tile[0] - Math.floor((d.size - 1) / 2), y = tile[1] - Math.floor((d.size - 1) / 2);
-      const c = checkPlace(s, t.type, x, y);
-      this.view.setGhost(t.type, x, y, c.ok);
-      this.hud.ghostTip(this.mouse.x, this.mouse.y, t.type, c, x, y);
+      const moving = t.kind === 'move' ? s.byId.get(t.id!) : undefined;
+      const c = checkPlace(s, ghostType, x, y, moving);
+      const powered = d.power >= 0 || !!d.node || coveredAt(s, x, y, d.size);
+      this.view.setGhost(ghostType, x, y, c.ok, c.ok && !powered);
+      // live preview: auto-links (cyan) and power hookup (yellow)
+      const lines: { a: THREE.Vector3; b: THREE.Vector3; color: string }[] = [];
+      const here = this.view.anchor(x, y, d.size);
+      if (c.ok && t.kind === 'build' && s.autoLink && this.previewKey !== `${ghostType}${x},${y}`) {
+        this.previewKey = `${ghostType}${x},${y}`;
+        this.previewCache = previewAutoLinks(s, ghostType, x, y);
+      }
+      if (c.ok && t.kind === 'build' && s.autoLink) for (const [f, to] of this.previewCache) {
+        const o = s.byId.get(f === -1 ? to : f);
+        if (!o) continue;
+        const od = BUILDING[o.type];
+        const there = this.view.anchor(o.x, o.y, od.size);
+        lines.push(f === -1 ? { a: here, b: there, color: '#6fe9ff' } : { a: there, b: here, color: '#6fe9ff' });
+      }
+      if (c.ok && d.power < 0 && !d.node) {
+        const node = this.nearestNodeCovering(x, y, d.size);
+        if (node) { const nd = BUILDING[node.type]; lines.push({ a: here, b: this.view.anchor(node.x, node.y, nd.size, 1.6), color: '#ffd84a' }); }
+      }
+      this.view.setPreview(lines);
+      this.hud.ghostTip(this.mouse.x, this.mouse.y, ghostType, c, x, y, this.previewCache.length && t.kind === 'build' && s.autoLink ? this.previewCache : undefined);
       return;
     }
     const b = this.view.buildingAt(this.mouse.x, this.mouse.y);
     if (b !== this.view.hovered) { this.view.hovered = b; if (b) audio.play('hover'); }
-    if (t.kind === 'link' && t.from !== null) { this.hud.linkTip(this.mouse.x, this.mouse.y, t.from, b); return; }
+    this.view.buildings.hoverId = b?.id ?? -1;
+    this.view.buildings.dangerId = t.kind === 'demolish' && b ? b.id : -1;
+    // links under the cursor (select / link / demolish)
+    let hl: number = -1;
+    if (!b) { const g = this.rig.screenToGround(this.mouse.x, this.mouse.y, 1.4); const l = g ? this.view.links.pick(g.x, g.z, 0.5) : null; if (l) hl = l.id; }
+    this.view.links.hoverLink = hl;
+    this.view.links.hoverDanger = t.kind === 'demolish' || t.kind === 'link';
+    if (t.kind === 'link' && t.from !== null) {
+      const A = s.byId.get(t.from);
+      if (A) {
+        const ad = BUILDING[A.type];
+        const a = this.view.anchor(A.x, A.y, ad.size);
+        let target: THREE.Vector3 | null = null, col = '#ffffff';
+        if (b && b.id !== A.id) {
+          const bd = BUILDING[b.type];
+          target = this.view.anchor(b.x, b.y, bd.size);
+          const ok = checkLink(s, A.id, b.id).ok || checkLink(s, b.id, A.id).ok;
+          col = ok ? '#5dff9a' : '#ff4a4a';
+        } else { const g = this.rig.screenToGround(this.mouse.x, this.mouse.y, a.y); if (g) target = g; }
+        this.view.setPreview(target ? [{ a, b: target, color: col }] : []);
+      }
+      this.hud.linkTip(this.mouse.x, this.mouse.y, t.from, b);
+      return;
+    }
+    if (hl >= 0 && !b) { const l = s.links.find((x) => x.id === hl); if (l) { this.hud.linkHoverTip(this.mouse.x, this.mouse.y, l, t.kind); return; } }
     if (b) this.hud.buildingTip(this.mouse.x, this.mouse.y, b);
     else this.hud.hideTip();
   }
@@ -507,12 +620,14 @@ export class Game {
       this.view.handleSignal(sg.kind, sg.x, sg.y, sg.data);
       switch (sg.kind) {
         case 'build': {
+          this.previewKey = '';
           const tip = FIRST_TIPS[sg.data as string];
           if (tip && !this.tipsSeen.has(sg.data as string) && this.started) { this.tipsSeen.add(sg.data as string); this.hud.toast(tip, 'info'); }
           const d = BUILDING[sg.data as string]; audio.play(d.size >= 3 ? 'placeBig' : 'place', ['power', 'extract', 'refine', 'compute', 'cooling', 'workload', 'logistics', 'special', 'core'].indexOf(d.cat)); this.hud.refreshPalette(); break; }
         case 'link': audio.play('link'); break;
         case 'unlink': audio.play('unlink'); break;
         case 'demolish': audio.play('demolish'); this.hud.refreshPalette(); break;
+        case 'move': this.previewKey = ''; break;
         case 'objective': audio.play('objective'); break;
         case 'research': audio.play('research'); this.hud.refreshPalette(); break;
         case 'event_warn': audio.play('warn'); break;

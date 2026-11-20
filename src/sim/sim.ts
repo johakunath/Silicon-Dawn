@@ -171,9 +171,10 @@ export function step(s: GameState) {
           break;
       }
       b.activity = d.gen === 'firm' ? b.activity : out / d.power;
+      b.pw = -out;
     }
     if (d.battery) {
-      b.status = b.charge > 1 ? 'ok' : 'idle'; b.activity = 0;
+      b.status = b.charge > 1 ? 'ok' : 'idle'; b.activity = 0; b.pw = 0;
       g.stored += b.charge;
       g.capacity += d.battery.capacity * s.fx.batteryMul;
     }
@@ -213,10 +214,10 @@ export function step(s: GameState) {
         const cap = d.battery.capacity * s.fx.batteryMul, rate = d.battery.rate * s.fx.batteryMul;
         if (charge > 0) {
           const c = Math.min(rate, charge, (cap - b.charge) / dt);
-          if (c > 0) { b.charge += c * dt; charge -= c; b.status = 'charging'; b.activity = c / rate; }
+          if (c > 0) { b.charge += c * dt; charge -= c; b.status = 'charging'; b.activity = c / rate; b.pw = c; }
         } else if (discharge > 0) {
           const c = Math.min(rate, discharge, b.charge / dt);
-          if (c > 0) { b.charge -= c * dt; discharge -= c; b.status = 'discharging'; b.activity = c / rate; }
+          if (c > 0) { b.charge -= c * dt; discharge -= c; b.status = 'discharging'; b.activity = c / rate; b.pw = -c; }
         }
       }
     }
@@ -229,7 +230,7 @@ export function step(s: GameState) {
     healthNum += D * g.sat; healthDen += D;
   }
   // gas turbine activity
-  for (const b of B) if (b.type === 'gas' && b.grid >= 0) { const g = G[b.grid]; b.activity = firmCap[b.grid] > 0 ? Math.min(1, (g.gen - Math.min(varGen[b.grid], g.demand)) / firmCap[b.grid]) : 0; }
+  for (const b of B) if (BUILDING[b.type].gen === 'firm' && b.grid >= 0) { const g = G[b.grid]; const share = firmCap[b.grid] > 0 ? Math.min(1, (g.gen - Math.min(varGen[b.grid], g.demand)) / firmCap[b.grid]) : 0; if (b.type === 'gas') b.activity = m.firmOff ? 0 : share; else b.activity = share; b.pw = -BUILDING[b.type].power * b.activity; }
 
   // ── pass B: production ──
   let computeProduced = 0, itPower = 0, facPower = 0, trainEff = 0, served = 0;
@@ -247,6 +248,7 @@ export function step(s: GameState) {
     if (d.power < 0) {
       let p = -d.power * (0.15 + 0.85 * want[i]) * sat;
       if (isCooling(b.type) && b.type !== 'pump') p *= s.fx.coolingPowerMul;
+      b.pw = p;
       if (d.it) itPower += p; else if (d.cat === 'cooling' || d.passthrough || d.workload) facPower += p;
     }
     if (d.gen || d.battery || (d.node && !d.inputs && !d.outputs)) {
@@ -315,6 +317,7 @@ export function step(s: GameState) {
             const haveA = Math.min(needA, b.inBuf.accel ?? 0);
             b.inBuf.accel = (b.inBuf.accel ?? 0) - haveA;
             s.engine.accel += haveA;
+            s.stats.consumed.accel = (s.stats.consumed.accel ?? 0) + haveA;
             const af = needA > 0 ? 0.25 + 0.75 * (haveA / needA) : 1;
             s.engine.progress = Math.min(1, s.engine.progress + (eff * (0.4 + 0.6 * fiberFrac) * af) / ENGINE_TARGET);
             if (s.engine.progress >= 1) {
@@ -349,6 +352,7 @@ export function step(s: GameState) {
       const need = (d.inputs?.coolant ?? 0) * k / s.fx.coolingMul;
       const got = Math.min(need, b.inBuf.coolant ?? 0);
       b.inBuf.coolant = (b.inBuf.coolant ?? 0) - got;
+      s.stats.consumed.coolant = (s.stats.consumed.coolant ?? 0) + got;
       let coolFrac = need > 0 ? got / need : 1;
       coolFrac *= m.cooling;
       const heatMul = b.mode === 'inference' ? 0.75 : b.mode === 'training' ? 1.15 : 1;
@@ -363,6 +367,7 @@ export function step(s: GameState) {
       b.outT = b.mode === 'training' ? 1.3 : b.mode === 'inference' ? 0.8 : 1;
       b.outF = 1;
       computeProduced += c;
+      s.stats.produced.compute = (s.stats.produced.compute ?? 0) + c;
       b.produced += c;
       b.activity = sat * throttle * (want[i] > 0.5 ? 1 : 0.3);
       if (throttle < 0.999) status = 'overheat';
@@ -407,7 +412,7 @@ export function step(s: GameState) {
       continue;
     }
     if (r > 0) {
-      for (const [it, rate] of ins) b.inBuf[it] = Math.max(0, (b.inBuf[it] ?? 0) - rate * kk * r);
+      for (const [it, rate] of ins) { const use = Math.min(b.inBuf[it] ?? 0, rate * kk * r); b.inBuf[it] = (b.inBuf[it] ?? 0) - use; s.stats.consumed[it] = (s.stats.consumed[it] ?? 0) + use; }
       for (const [it, rate] of outs) {
         const a = rate * kk * r;
         b.outBuf[it] = (b.outBuf[it] ?? 0) + a;
@@ -466,7 +471,7 @@ export function step(s: GameState) {
             dst.rxQ += mv * src.outQ;
             dst.rxT += mv * src.outT;
             dst.rxFiber += mv * src.outF * (l.kind === 'fiber' ? 1 : 0);
-            if (dd.workload) computeDelivered += mv;
+            if (dd.workload) { computeDelivered += mv; s.stats.consumed.compute = (s.stats.consumed.compute ?? 0) + mv; }
           }
         }
         l.moved = mv;

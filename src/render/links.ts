@@ -47,6 +47,8 @@ export class LinkLayer {
   private C2 = new THREE.Color();
   private dirty = true;
   highlight: Set<number> | null = null;
+  hoverLink = -1;
+  hoverDanger = false;
   focusKinds: Set<string> | null = null; // overlay filter
   showStates = false; // logistics overlay
   reducedMotion = false;
@@ -227,7 +229,7 @@ export class LinkLayer {
     // per-link colours (belts & data) + packets
     const counts: Record<string, number> = {};
     for (const sh of SHAPES) counts[sh] = 0;
-    let nb = 0, nd = 0;
+    let nb = 0, nd = 0, np = 0;
     const blink = 0.5 + 0.5 * Math.sin(now * 8);
     const p = new THREE.Vector3(), p2 = new THREE.Vector3();
     for (const l of s.links) {
@@ -242,11 +244,14 @@ export class LinkLayer {
       if (l.state === 'blocked') this.C.set('#ff3030'), k = (0.4 + blink * 1.2) * dim;
       if (this.showStates && l.state === 'idle') this.C.set('#6a7080'), k = 0.5;
       this.C.multiplyScalar(k);
+      const hov = l.id === this.hoverLink;
+      if (hov) { this.C.set(this.hoverDanger ? '#ff4040' : '#ffffff').multiplyScalar(1.6 + Math.sin(now * 10) * 0.6); }
       const segs = v.arc > 0 ? 6 : 1;
+      if (l.kind === 'pipe') { this.C2.setRGB(1, 1, 1); if (hov) this.C2.copy(this.C); this.pipe.setColorAt(np++, this.C2); }
       if (l.kind === 'conveyor') { for (let q = 0; q < segs; q++) this.beltGlow.setColorAt(nb++, this.C); }
       else if (l.kind === 'cable' || l.kind === 'fiber') {
         const base = l.kind === 'fiber' ? 0.55 : 0.18;
-        const c2 = this.C2.copy(this.C).multiplyScalar(base / Math.max(0.01, k) * (l.state === 'blocked' ? k : 1) * dim * hl + (l.kind === 'fiber' ? 0.2 : 0));
+        const c2 = hov ? this.C2.copy(this.C) : this.C2.copy(this.C).multiplyScalar(base / Math.max(0.01, k) * (l.state === 'blocked' ? k : 1) * dim * hl + (l.kind === 'fiber' ? 0.2 : 0));
         if (l.kind === 'fiber' && l.rate > 0.5) c2.addScalar(0.15 * dim);
         if (l.kind === 'fiber' && sync > 0 && !this.reducedMotion) c2.addScalar(Math.pow(Math.max(0, Math.sin(now * 3.1)), 14) * 2.2 * sync * dim);
         for (let q = 0; q < segs; q++) this.data.setColorAt(nd++, c2);
@@ -300,6 +305,7 @@ export class LinkLayer {
     }
     if (this.beltGlow.instanceColor) this.beltGlow.instanceColor.needsUpdate = true;
     if (this.data.instanceColor) this.data.instanceColor.needsUpdate = true;
+    if (this.pipe.instanceColor) this.pipe.instanceColor.needsUpdate = true;
   }
 
   markDirty() { this.dirty = true; this.vis.clear(); this.linkSig = ''; }
