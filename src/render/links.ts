@@ -212,7 +212,7 @@ export class LinkLayer {
     const s = this.s;
     this.glowMat.color.setScalar(glowLevel);
     // dark copper by day, warm glowing lines at night: always readable
-    this.wireMat.color.setRGB(0.32 + night * 1.1, 0.24 + night * 0.85, 0.1 + night * 0.25);
+    this.wireMat.color.setRGB(0.32 + night * 0.38, 0.24 + night * 0.3, 0.1 + night * 0.1);
     // structural changes?
     const sig = s.links.length + ':' + (s.links.length ? s.links[s.links.length - 1].id + ':' + s.links[0].id : '') + ':' + s.buildings.length;
     if (sig !== this.linkSig) {

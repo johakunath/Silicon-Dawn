@@ -460,6 +460,20 @@ export class Hud {
     const v = new THREE.Vector3();
     const pulse = Math.sin(g.realTime * 6) * 3;
     let n = 0;
+    // battery fill gauges above battery buildings (when zoomed in enough to read them)
+    if (g.rig.view < 26) for (const b of s.buildings) {
+      const d = BUILDING[b.type];
+      if (!d.battery) continue;
+      v.set(b.x + d.size / 2, baseHeight(s.world, b.x, b.y, d.size) + g.view.buildings.modelHeight(b.type) + 0.25, b.y + d.size / 2);
+      const p = g.rig.worldToScreen(v);
+      if (p.x < -30 || p.y < -30 || p.x > W + 30 || p.y > H + 30) continue;
+      const f = Math.max(0, Math.min(1, b.charge / (d.battery.capacity * s.fx.batteryMul)));
+      const x = p.x - 16, y = p.y - 8;
+      ctx.fillStyle = 'rgba(5,8,18,0.75)'; ctx.fillRect(x - 2, y - 2, 38, 18);
+      ctx.strokeStyle = '#c9d6ee'; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, 30, 14); ctx.fillStyle = '#c9d6ee'; ctx.fillRect(x + 30, y + 4, 3, 6);
+      ctx.fillStyle = f > 0.5 ? '#5dff9a' : f > 0.2 ? '#ffb347' : '#ff5a5a'; ctx.fillRect(x + 2, y + 2, 26 * f, 10);
+      if (b.status === 'charging') { ctx.fillStyle = '#fff'; ctx.font = '700 12px Rajdhani, sans-serif'; ctx.fillText('⚡', x + 15, y + 7); ctx.font = '700 17px Rajdhani, sans-serif'; }
+    }
     for (const b of s.buildings) {
       const kind = badgeFor(b);
       if (!kind) continue;

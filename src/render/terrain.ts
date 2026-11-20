@@ -33,7 +33,24 @@ export function tileHeight(w: World, x: number, y: number): number {
   return l === 0 ? SEABED_Y : l * LEVEL_H;
 }
 
-export function buildTerrain(w: World): THREE.Mesh {
+/** visual micro-relief step per half-tile cell (gameplay heights stay per tile) */
+function microStep(w: World, cx: number, cy: number): number {
+  const t = idx(w, cx >> 1, cy >> 1);
+  const b = w.biome[t], l = w.level[t];
+  const amp = l === 0 ? 0.05 : b === BIOME.ROCK || l >= 5 ? 0.13 : b === BIOME.TUNDRA ? 0.08 : b === BIOME.DESERT ? 0.03 : 0.05;
+  const q = Math.floor(hashTile(cx, cy, w.seed + 77) * 3); // 0,1,2 → quantised terraces-within-terraces
+  return (q / 2) * amp;
+}
+
+/** visual ground height at a world point, including micro-relief */
+export function groundAt(w: World, px: number, pz: number): number {
+  const x = Math.floor(px), z = Math.floor(pz);
+  if (x < 0 || z < 0 || x >= w.size || z >= w.size) return 0;
+  return tileHeight(w, x, z) + microStep(w, Math.floor(px * 2), Math.floor(pz * 2));
+}
+
+/** fine = half-tile cells with micro-relief (visible mesh); coarse = per-tile (cheap shadow caster) */
+export function buildTerrain(w: World, fine = true): THREE.Mesh {
   const pos: number[] = [], col: number[] = [];
   const c = new THREE.Color(), c2 = new THREE.Color(), csub = new THREE.Color(), flower = new THREE.Color('#e8e07a');
   const pushQuad = (ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, dx: number, dy: number, dz: number, color: THREE.Color, color2?: THREE.Color) => {
@@ -41,69 +58,71 @@ export function buildTerrain(w: World): THREE.Mesh {
     pos.push(ax, ay, az, bx, by, bz, cx, cy, cz, ax, ay, az, cx, cy, cz, dx, dy, dz);
     col.push(color.r, color.g, color.b, color.r, color.g, color.b, k.r, k.g, k.b, color.r, color.g, color.b, k.r, k.g, k.b, k.r, k.g, k.b);
   };
-  const S = w.size;
+  const S = w.size, SUB = fine ? 2 : 1, N = S * SUB, CS = 1 / SUB; // cells
+  const tileCol: THREE.Color[] = new Array(S * S);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     const i = idx(w, x, y);
-    const l = w.level[i];
-    const h = tileHeight(w, x, y);
-    const b = w.biome[i];
+    const l = w.level[i], b = w.biome[i];
     const r = hashTile(x, y, w.seed + 1);
     const [ca, cb] = BIOME_COL[b];
-    c.set(ca).lerp(c2.set(cb), r);
-    // beach: land level 1 touching water
+    const cc = new THREE.Color(ca).lerp(c2.set(cb), r);
     if (l === 1) {
       let wet = false;
       for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
         const xx = x + dx, yy = y + dy;
         if (xx >= 0 && yy >= 0 && xx < S && yy < S && w.level[idx(w, xx, yy)] === 0) wet = true;
       }
-      if (wet && b !== BIOME.TUNDRA) c.set('#e6d39a').lerp(c2.set('#d9c084'), r);
+      if (wet && b !== BIOME.TUNDRA) cc.set('#e6d39a').lerp(c2.set('#d9c084'), r);
     }
-    if (l >= 6) c.set('#f4f8fb');
-    if (l === 0) {
-      // seabed darker with depth by distance to shore approximated
-      c.set('#c9b98a').lerp(c2.set('#7e8f7a'), 0.4 + r * 0.3);
-    }
-    // subtle large-scale tint variation
-    const v = 0.92 + hashTile(x >> 2, y >> 2, w.seed + 9) * 0.12;
-    c.multiplyScalar(v);
-    // finer 2×2 sub-tiles per tile: subtle colour jitter (grass blades, sand ripples, snow drifts)
-    for (let sy = 0; sy < 2; sy++) for (let sx = 0; sx < 2; sx++) {
-      const j = hashTile(x * 2 + sx, y * 2 + sy, w.seed + 23);
-      csub.copy(c).multiplyScalar(0.94 + j * 0.12);
-      if (l > 0 && j > 0.93 && (b === BIOME.GRASS || b === BIOME.FOREST)) csub.lerp(flower, 0.25);
-      const x0 = x + sx * 0.5, y0 = y + sy * 0.5;
-      pushQuad(x0, h, y0, x0, h, y0 + 0.5, x0 + 0.5, h, y0 + 0.5, x0 + 0.5, h, y0, csub);
-    }
-    // walls: east (+x) and south (+y), west, north
-    const neigh: [number, number, number[]][] = [
-      [x + 1, y, [x + 1, y, x + 1, y + 1]],
-      [x - 1, y, [x, y + 1, x, y]],
-      [x, y + 1, [x + 1, y + 1, x, y + 1]],
-      [x, y - 1, [x, y, x + 1, y]],
+    if (l >= 6) cc.set('#f4f8fb');
+    if (l === 0) cc.set('#c9b98a').lerp(c2.set('#7e8f7a'), 0.4 + r * 0.3);
+    cc.multiplyScalar(0.92 + hashTile(x >> 2, y >> 2, w.seed + 9) * 0.12);
+    tileCol[i] = cc;
+  }
+  const cellH = new Float32Array(N * N);
+  for (let cy = 0; cy < N; cy++) for (let cx = 0; cx < N; cx++) cellH[cy * N + cx] = fine ? tileHeight(w, cx >> 1, cy >> 1) + microStep(w, cx, cy) : tileHeight(w, cx, cy);
+  const H = (cx: number, cy: number) => (cx < 0 || cy < 0 || cx >= N || cy >= N ? BASE_Y : cellH[cy * N + cx]);
+  for (let cy = 0; cy < N; cy++) for (let cx = 0; cx < N; cx++) {
+    const tx = fine ? cx >> 1 : cx, ty = fine ? cy >> 1 : cy, ti = idx(w, tx, ty);
+    const l = w.level[ti], b = w.biome[ti];
+    const h = H(cx, cy);
+    const j = hashTile(cx, cy, w.seed + 23);
+    csub.copy(tileCol[ti]).multiplyScalar(0.93 + j * 0.14 + (h - tileHeight(w, tx, ty)) * 0.9);
+    if (l > 0 && j > 0.94 && (b === BIOME.GRASS || b === BIOME.FOREST)) csub.lerp(flower, 0.3);
+    const x0 = cx * CS, y0 = cy * CS, x1 = x0 + CS, y1 = y0 + CS;
+    pushQuad(x0, h, y0, x0, h, y1, x1, h, y1, x1, h, y0, csub);
+    // walls toward lower neighbour cells (micro steps and real cliffs)
+    const neigh: [number, number, number, number, number, number][] = [
+      [cx + 1, cy, x1, y0, x1, y1], [cx - 1, cy, x0, y1, x0, y0], [cx, cy + 1, x1, y1, x0, y1], [cx, cy - 1, x0, y0, x1, y0],
     ];
-    for (const [nx, ny, e] of neigh) {
-      const nh = nx < 0 || ny < 0 || nx >= S || ny >= S ? BASE_Y : tileHeight(w, nx, ny);
-      if (nh >= h) continue;
-      // strata bands
-      const top = h, bot = nh;
-      const steps = Math.max(1, Math.round((top - bot) / LEVEL_H));
-      for (let s = 0; s < steps; s++) {
-        const t0 = top - ((top - bot) * s) / steps, t1 = top - ((top - bot) * (s + 1)) / steps;
+    const r = hashTile(tx, ty, w.seed + 1);
+    for (const [nx, ny, ax, az, bx, bz] of neigh) {
+      const nh = H(nx, ny);
+      if (nh >= h - 1e-4) continue;
+      const drop = h - nh;
+      if (drop < LEVEL_H * 0.5) {
+        // micro step: short lip in a slightly darker ground colour
+        c.copy(csub).multiplyScalar(0.72);
+        pushQuad(ax, h, az, bx, h, bz, bx, nh, bz, ax, nh, az, c);
+        continue;
+      }
+      const steps = Math.max(1, Math.round(drop / LEVEL_H));
+      for (let st = 0; st < steps; st++) {
+        const t0 = h - (drop * st) / steps, t1 = h - (drop * (st + 1)) / steps;
         const depth = (h - t0) / 3;
         const isBase = t1 < SEABED_Y - 0.01;
         if (isBase) c.set('#4a3a2e').lerp(c2.set('#2a2228'), Math.min(1, (SEABED_Y - t1) / 2.4));
         else if (b === BIOME.DESERT) c.set('#c49a5e').lerp(c2.set('#a87848'), depth + r * 0.2);
         else if (b === BIOME.TUNDRA || l >= 6) c.set('#9fb3c2').lerp(c2.set('#7b8796'), depth);
         else c.set('#7a6450').lerp(c2.set('#5e4b3c'), depth + r * 0.2);
-        if (s === 0 && !isBase && l > 0 && b !== BIOME.DESERT && b !== BIOME.ROCK) {
-          // grass lip
+        c.multiplyScalar(0.92 + hashTile(cx, cy * 3 + st, w.seed + 5) * 0.16); // strata speckle per half-tile
+        if (st === 0 && !isBase && l > 0 && b !== BIOME.DESERT && b !== BIOME.ROCK) {
           c2.copy(c);
           const lip = new THREE.Color(BIOME_COL[b][0]).multiplyScalar(0.8);
-          pushQuad(e[0], t0, e[1], e[2], t0, e[3], e[2], t1, e[3], e[0], t1, e[1], lip, c2);
+          pushQuad(ax, t0, az, bx, t0, bz, bx, t1, bz, ax, t1, az, lip, c2);
           continue;
         }
-        pushQuad(e[0], t0, e[1], e[2], t0, e[3], e[2], t1, e[3], e[0], t1, e[1], c);
+        pushQuad(ax, t0, az, bx, t0, bz, bx, t1, bz, ax, t1, az, c);
       }
     }
   }
@@ -111,10 +130,18 @@ export function buildTerrain(w: World): THREE.Mesh {
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.computeVertexNormals();
+  if (!fine) {
+    // invisible in the colour pass, only writes the shadow map
+    const mesh = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
+    mesh.castShadow = true;
+    mesh.receiveShadow = false;
+    return mesh;
+  }
   const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, flatShading: true });
   const mesh = new THREE.Mesh(g, m);
   mesh.receiveShadow = true;
-  mesh.castShadow = true;
+  mesh.castShadow = false;
+  mesh.add(buildTerrain(w, false));
   return mesh;
 }
 
@@ -242,7 +269,8 @@ export function buildProps(w: World): PropLayer {
     for (let k = 0; k < n; k++) {
       const r1 = hashTile(x, y, 50 + k), r2 = hashTile(x, y, 60 + k), r3 = hashTile(x, y, 70 + k);
       const sc = 0.75 + r3 * 0.6;
-      v.set(x + 0.25 + r1 * 0.5, tileHeight(w, x, y), y + 0.25 + r2 * 0.5);
+      v.set(x + 0.25 + r1 * 0.5, 0, y + 0.25 + r2 * 0.5);
+      v.y = groundAt(w, v.x, v.z);
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r1 * 6.28);
       s.set(sc, sc * (0.85 + r2 * 0.4), sc);
       m.compose(v, q, s);
@@ -280,7 +308,8 @@ export function buildProps(w: World): PropLayer {
     for (let k = 0; k < 3; k++) {
       const r1 = hashTile(x, y, 80 + k), r2 = hashTile(x, y, 90 + k), r3 = hashTile(x, y, 99 + k);
       const sc = 0.6 + r3 * 0.8;
-      v.set(x + 0.2 + r1 * 0.6, tileHeight(w, x, y) + (d === 2 ? 0.08 : 0.12), y + 0.2 + r2 * 0.6);
+      v.set(x + 0.2 + r1 * 0.6, 0, y + 0.2 + r2 * 0.6);
+      v.y = groundAt(w, v.x, v.z) + (d === 2 ? 0.08 : 0.12);
       q.setFromEuler(new THREE.Euler((r1 - 0.5) * 0.6, r2 * 6, (r3 - 0.5) * 0.6));
       s.set(sc, sc, sc);
       m.compose(v, q, s);

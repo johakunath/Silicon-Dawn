@@ -131,7 +131,8 @@ export class Game {
     if (mode === 'campaign') {
       this.hud.showEraBanner(1);
       let done = false; try { done = localStorage.getItem('sd_tutorial_done') === '1'; } catch { /* */ }
-      if (!done) setTimeout(() => this.hud.tutorial.start(), 2600);
+      const st = this.s;
+      if (!done) setTimeout(() => { if (this.s === st && this.started) this.hud.tutorial.start(); }, 2600);
       else this.hud.toast('Paused: press Space when ready. Press J for the Codex.', 'info');
     }
   }
@@ -148,6 +149,7 @@ export class Game {
       this.paused = false;
       this.finale = s.engine.ignited ? 1 : 0;
       rebuildGrids(s); step(s);
+      this.hud.tutorial.cancel();
       this.hud.onNewState();
       this.hud.refreshSpeed();
       this.hud.toast('Game loaded', 'good');

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GB } from './geom';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 
 export interface Model {
   body: THREE.BufferGeometry;
@@ -23,7 +24,84 @@ const G = {
 
 function foundation(b: GB, s: number, color = C.concreteD, h = 0.12) {
   b.box(s - 0.08, h, s - 0.08, 0, 0, 0, color);
+  // kerb trim + hazard corner bollards: reads as a built pad, not a grey slab
+  const e = s / 2 - 0.06;
+  b.box(s - 0.04, 0.035, 0.05, 0, h - 0.01, e, C.steelD);
+  b.box(s - 0.04, 0.035, 0.05, 0, h - 0.01, -e, C.steelD);
+  b.box(0.05, 0.035, s - 0.04, e, h - 0.01, 0, C.steelD);
+  b.box(0.05, 0.035, s - 0.04, -e, h - 0.01, 0, C.steelD);
+  if (s >= 2) for (const [x, z] of [[e, e], [-e, e], [e, -e], [-e, -e]]) { b.cyl(0.035, 0.035, 0.16, x, h, z, C.yellow, 6); b.cyl(0.037, 0.037, 0.03, x, h + 0.08, z, C.black, 6); }
 }
+
+// ── detail kit ──
+function ladder(b: GB, x: number, y: number, z: number, h: number, ry = 0) {
+  const dx = Math.cos(ry) * 0.07, dz = -Math.sin(ry) * 0.07;
+  b.box(0.025, h, 0.025, x - dx, y, z - dz, C.steelD, ry);
+  b.box(0.025, h, 0.025, x + dx, y, z + dz, C.steelD, ry);
+  for (let k = 0.12; k < h; k += 0.12) b.box(0.16, 0.018, 0.018, x, y + k, z, C.steel, ry);
+}
+function railing(b: GB, w: number, d: number, y: number) {
+  for (const z of [-d / 2, d / 2]) { b.box(w, 0.02, 0.02, 0, y + 0.12, z, C.yellow); for (let x = -w / 2; x <= w / 2 + 1e-6; x += w / 4) b.box(0.02, 0.12, 0.02, x, y, z, C.steelD); }
+  for (const x of [-w / 2, w / 2]) b.box(0.02, 0.02, d, x, y + 0.12, 0, C.yellow);
+}
+function vent(b: GB, x: number, y: number, z: number, r = 0.1) {
+  b.cyl(r, r, 0.12, x, y, z, C.steel, 10);
+  b.cyl(r * 1.25, r * 1.25, 0.025, x, y + 0.12, z, C.steelD, 10);
+}
+function pipeRun(b: GB, x0: number, z0: number, x1: number, z1: number, y: number, color = C.steel, r = 0.04) {
+  const len = Math.hypot(x1 - x0, z1 - z0);
+  const ry = Math.atan2(-(z1 - z0), x1 - x0); // Euler XYZ: Rz(90°) lays the cylinder along X, Ry aims it
+  b.add(new THREE.CylinderGeometry(r, r, len, 8), color, GB.mat((x0 + x1) / 2, y, (z0 + z1) / 2, 0, ry, Math.PI / 2));
+  b.cylC(r * 1.4, r * 1.4, 0.04, x0, y, z0, C.steelD, 8, 0, ry, Math.PI / 2);
+  b.cylC(r * 1.4, r * 1.4, 0.04, x1, y, z1, C.steelD, 8, 0, ry, Math.PI / 2);
+}
+function windows(g: GB, n: number, w: number, y: number, z: number, color: string, ry = 0) {
+  for (let i = 0; i < n; i++) {
+    const t = (i - (n - 1) / 2) * (w / n);
+    g.box(w / n * 0.6, 0.08, 0.02, Math.cos(ry) * t + Math.sin(ry) * z, y, -Math.sin(ry) * t + Math.cos(ry) * z, color, ry);
+  }
+}
+function cabinet(b: GB, g: GB, x: number, y: number, z: number, ry = 0) {
+  b.box(0.18, 0.26, 0.12, x, y, z, C.steelD, ry);
+  g.box(0.04, 0.03, 0.01, x + Math.sin(ry) * 0.065, y + 0.2, z + Math.cos(ry) * 0.065, G.green, ry);
+}
+
+/** extra detail parts merged into each building's base model */
+const EXTRAS: Record<string, (b: GB, g: GB) => void> = {
+  hq: (b, g) => {
+    windows(g, 8, 1.5, 1.2, 0.74, G.ice); windows(g, 8, 1.5, 1.2, 0.74, G.ice, Math.PI / 2); windows(g, 8, 1.5, 1.2, 0.74, G.ice, Math.PI); windows(g, 8, 1.5, 1.2, 0.74, G.ice, -Math.PI / 2);
+    b.add(new THREE.SphereGeometry(0.22, 12, 4, 0, Math.PI * 2, 0, Math.PI / 3), C.white, GB.mat(0.55, 2.75, 0.2, Math.PI * 0.8, 0, 0.5));
+    b.box(0.5, 0.06, 0.5, 0, 0.25, 1.25, C.concrete); b.box(0.5, 0.06, 0.32, 0, 0.13, 1.4, C.concrete);
+    ladder(b, -0.62, 0.75, 0, 1.6, Math.PI / 2);
+  },
+  solar: (b, g) => { cabinet(b, g, -0.8, 0.06, 0.88); b.box(1.6, 0.03, 0.06, 0, 0.1, 0, C.steelD); },
+  quarry: (b, g) => { ladder(b, -0.6, 0.12, 0.6, 1.4, Math.PI / 4); b.box(0.3, 0.06, 0.9, 0.55, 0.9, 0.0, C.steelD, 0, 0.5); cabinet(b, g, -0.7, 0.12, -0.6); },
+  drill: (b, g) => { windows(g, 2, 0.5, 0.6, 0.71, G.ice); pipeRun(b, -0.8, -0.6, 0.6, -0.6, 0.2); cabinet(b, g, 0.75, 0.12, 0.2, Math.PI / 2); },
+  furnace: (b, g) => { pipeRun(b, 0.45, -0.45, -0.55, -0.45, 1.6, C.steelD, 0.05); ladder(b, 0.66, 0.12, -0.45, 1.8, Math.PI / 2); windows(g, 3, 1.0, 0.75, 0.73, G.amber); vent(b, -0.5, 1.14, 0.4); },
+  smelter: (b, g) => { ladder(b, -0.25, 0.12, 0.92, 1.1); railing(b, 1.0, 1.0, 1.21); cabinet(b, g, 0.75, 0.12, 0.6); },
+  battery: (b, g) => { for (const x of [-0.55, 0, 0.55]) b.cyl(0.03, 0.03, 0.12, x + 0.08, 1.12, 0, C.red, 6); pipeRun(b, -0.55, 0.12, 0.55, 0.12, 1.2, C.black, 0.025); cabinet(b, g, 0.75, 0.12, -0.6); },
+  depot: (b) => { b.box(0.4, 0.3, 0.3, 0.4, 0.3, -0.45, C.steel); b.box(0.25, 0.25, 0.25, -0.5, 0.3, 0.45, C.yellow); },
+  pump: (b) => { pipeRun(b, 0.25, 0.25, 0.45, -0.35, 0.3, C.blue, 0.05); vent(b, -0.1, 0.7, -0.1, 0.08); },
+  fab: (b, g) => { for (const x of [-0.9, -0.3, 0.3]) vent(b, x, 1.3, 0.8); windows(g, 6, 2.2, 0.35, 1.26, G.ice); b.box(0.6, 0.5, 0.06, 0.6, 0.12, 1.27, C.steelD); railing(b, 2.2, 1.7, 1.46); ladder(b, 1.06, 0.12, 0.9, 1.0, Math.PI / 2); pipeRun(b, 0.85, -0.7, -0.6, -0.7, 0.9, C.steel, 0.06); },
+  rack: (b, g) => { b.box(0.04, 0.3, 0.02, -0.24, 0.6, 0.32, C.steel); b.cyl(0.05, 0.05, 0.3, 0.2, 1.55, 0.2, C.black, 6); g.box(0.06, 0.02, 0.01, -0.2, 1.35, 0.32, G.green); },
+  cooler: (b) => { ladder(b, 0.78, 0.12, 0, 2.2, Math.PI / 2); pipeRun(b, -0.9, 0.6, -0.4, 0.4, 0.25, C.blue, 0.06); b.torus(0.62, 0.03, 0, 2.35, 0, C.steelD); },
+  lab: (b, g) => { windows(g, 5, 1.4, 0.45, 0.86, G.ice); b.cyl(0.02, 0.02, 0.6, 0.7, 0.82, -0.5, C.steel, 4); g.sphere(0.04, 0.7, 1.44, -0.5, G.red); vent(b, 0.4, 0.82, 0.6); },
+  substation: (b) => { for (const x of [-0.45, 0.45]) pipeRun(b, x, -0.4, 0, 0.45, 0.95, C.black, 0.02); },
+  gridbat: (b, g) => { for (const z of [-0.45, 0.45]) { cabinet(b, g, -0.75, 0.12, z + 0.2); vent(b, 0.3, 0.82, z, 0.08); } },
+  gas: (b) => { ladder(b, 0.82, 0.12, -0.55, 2.2, Math.PI / 2); pipeRun(b, -0.55, -0.55, -0.1, 0.0, 0.5); railing(b, 0.6, 0.6, 0.52); },
+  chiller: (b) => { railing(b, 1.8, 1.6, 0.77); pipeRun(b, -0.9, 0.85, 0.9, 0.85, 0.3, C.blue, 0.05); },
+  hall: (b, g) => { b.box(0.5, 0.6, 0.04, 0.6, 0.12, 1.22, C.steelD); b.box(0.5, 0.6, 0.04, -0.4, 0.12, 1.22, C.steelD); railing(b, 2.6, 2.4, 1.62); for (const z of [-1.0, 1.0]) pipeRun(b, -1.35, z, 1.35, z, 1.75, C.steel, 0.04); g.box(0.3, 0.02, 0.01, 0.6, 0.65, 1.245, G.green); },
+  gateway: (b) => { ladder(b, 0.32, 0.7, 0, 1.6, Math.PI / 2); railing(b, 1.3, 1.3, 0.72); },
+  trainer: (b) => { for (const [x, z] of [[-1.0, 0], [1.0, 0], [0, -1.0], [0, 1.0]]) vent(b, x, 0.62, z * 0.95, 0.09); railing(b, 2.0, 2.0, 1.12); },
+  raremine: (b, g) => { cabinet(b, g, 0.8, 0.1, 0.5, Math.PI / 2); ladder(b, -0.82, 0.1, 0, 0.9, Math.PI / 2); },
+  accfab: (b) => { for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; vent(b, Math.cos(a) * 0.8, 1.62, Math.sin(a) * 0.8, 0.07); } pipeRun(b, 1.0, -1.0, 1.0, 0.6, 0.4); },
+  pod: (b) => { for (const z of [-0.5, 0, 0.5]) pipeRun(b, -0.78, z, -0.78, z + 0.3, 0.6, C.blue, 0.035); railing(b, 1.6, 1.6, 1.42); },
+  wind: (b) => { b.box(0.2, 0.3, 0.05, 0, 0.15, 0.17, C.steelD); ladder(b, 0, 0.4, 0.14, 0.6); },
+  robofab: (b, g) => { vent(b, -0.5, 0.95, -0.5); vent(b, 0.2, 0.95, -0.5); windows(g, 3, 1.2, 0.7, 0.36, G.ice); },
+  hub: (b) => { for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.box(0.08, 0.02, 0.2, Math.cos(a) * 0.55, 0.19, Math.sin(a) * 0.55, C.yellow, -a); } },
+  fusion: (b) => { for (let i = 0; i < 4; i++) { const a = (i / 4) * Math.PI * 2 + 0.4; pipeRun(b, Math.cos(a) * 1.3, Math.sin(a) * 1.3, Math.cos(a) * 0.5, Math.sin(a) * 0.5, 0.65, C.blue, 0.06); } railing(b, 2.6, 2.6, 0.52); },
+  engine: (b) => { for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; vent(b, Math.cos(a) * 1.7, 0.4, Math.sin(a) * 1.7, 0.12); } },
+};
 
 type Builder = () => Model;
 
@@ -424,6 +502,14 @@ export function getModel(type: string): Model {
     const f = builders[type];
     if (!f) throw new Error('No model for ' + type);
     m = f();
+    const ex = EXTRAS[type];
+    if (ex) {
+      const b = new GB(), g = new GB();
+      ex(b, g);
+      const eb = b.build(), eg = g.build();
+      if (eb) m.body = mergeGeometries([m.body, eb], false)!;
+      if (eg) m.glow = m.glow ? mergeGeometries([m.glow, eg], false)! : eg;
+    }
     cache.set(type, m);
   }
   return m;

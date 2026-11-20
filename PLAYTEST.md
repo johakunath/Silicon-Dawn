@@ -61,7 +61,7 @@ Method: each milestone has three checks. (1) A real-input run in headless Edge (
 | Shorter nights on Relaxed | Relaxed nights are ~70 s (standard ~110 s) of a 240 s day. |
 | Anti-aliasing on big screens | MSAA ×4 composer target plus HalfFloat HDR, and a UI auto-scale (×1.2 at 1440p, ×1.5 at 4K). |
 | Water stripes finer | A finer, lower-amplitude wave normal and finer foam bands. |
-| Finer grid, more detailed buildings | Terrain tiles are drawn as 2×2 sub-tiles with colour variation (rarely, flowers). Round building parts use ~1.6× more segments. |
+| Finer grid, more detailed buildings | **Second pass (after audit):** the first pass was only cosmetic (a 2×2 colour pattern plus rounder cylinders). Now the terrain is a real **half-tile geometry grid**: each tile is 4 cells with their own small height step (stronger on rock and snow, subtle on grass, flat-ish on sand), real micro-walls and strata speckle. Gameplay stays on the 1×1 grid, and props and crystals sit on the relief. **Buildings got a real detail pass**: kerb trims and hazard bollards on every pad, plus per-building ladders, pipe runs with flanges, window strips, roof railings, vents and control cabinets on all 30 models. Shadows use a coarse terrain copy, which keeps 676 buildings at ~100 fps. |
 | Is demolishing punished? | No: **100% refund**, stated in the tooltips. |
 | Merge pipes and belts (pump → pump) | New **Junction** (1×1, era 1): merges or splits belts and pipes and relays beyond 14 tiles. |
 | Platforms on uneven ground | Buildings can span up to 2 terraces. A concrete **platform** is built for +2 metal per tile-step. |
@@ -72,6 +72,13 @@ Method: each milestone has three checks. (1) A real-input run in headless Edge (
 | Could not link Chip Fab ↔ Ore Smelter | The link tool now accepts either click order (smelter → fab carries metal), and the tooltip explains when a pair can't be linked. |
 
 Bugs found during this pass: the campaign could complete at 99.9% engine charge **before** ignition (fixed). Shipping from storage drained chips needed for construction (storage now keeps a 40-unit reserve). The tooltip panel intercepted clicks (fixed). UI zoom misplaced the screen-space overlays (moved to unscaled layers, with transform-based scaling).
+
+### Audit: status of every point (2026-11-20)
+
+- **Done:** start paused · interactive tutorial (now also highlights *where* to put the furnace, and teaches overlays) · Codex with chapters and bullets · rich tooltips on resources, power, compute, buildings and all buttons · per-minute rates everywhere · statistics screen (also from the Core) · link flows per minute · ratios (furnaces per extractor, batteries per array) · preview of the power hookup while placing · auto-link and link previews · link tool in either order without pre-selecting · deleting links · demolish cursor and red highlight · hover blink · toolbar separate from build categories · hotbar 1–0 · minimap button clipping · battery ghost bars bug · battery icon in the top bar **and fill gauges above battery buildings** · top bar jitter · free rotation (LMB+RMB) · shorter Relaxed nights · anti-aliasing and UI scaling on 1440p/4K · finer water · thicker, more visible cables · finer terrain grid · more detailed buildings · 100% refunds · junction (merge/split pipes and belts) · platforms on uneven ground · move buildings · pipette · tech tree as a graph.
+- **Partly:** "research Factorio/Satisfactory": quick wins come from my own knowledge of those games (hotbar, pipette, refunds, foundations, relocation, stats, mergers/splitters, previews). No new web research was done. "Connect pump to pump" works through a Junction, not directly. "What uses the AI?" is answered in the Codex, but there is no consumer economy yet.
+- **Not done:** Satisfactory-style free-form belt routing (links are still straight point-to-point). AI consumer economy. Blueprints / copy-paste. Building rotation or facing.
+- **Left as is (your call):** day/night length on Standard; 90° rotation via Q/E remains alongside free rotation.
 
 ## Needs human playtesting
 - **Total campaign length** (target 2–3 h) and the per-era pace, especially the Era 1 waiting phase and the Era 5 charge time.

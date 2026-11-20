@@ -45,10 +45,11 @@ export const STEPS: Step[] = [
   { text: 'Now start time: press <kbd>Space</kbd> or click <b>1×</b>. You can pause any time.', target: '#speed', done: (g) => !g.paused },
   { text: 'Next, raw materials. Open <b>INDUSTRY</b> and pick the <b>Quartz Extractor</b>.', target: '#build .tabs button[data-tab="prod"]', done: (g) => g.tool.kind === 'build' && g.tool.type === 'quarry' || countType(g.s, 'quarry') > 0 },
   { text: 'Place it squarely on the <b>cyan crystals</b> (they glow while placing). More crystal tiles under it means more output. Is it out of reach of the grid? The ghost turns <b style="color:#ffb347">orange</b>, and you add a <b>Power Pole</b>.', target: (g) => { const p = nearestDeposit(g, DEPOSIT.QUARTZ); return p ? worldRect(g, p[0] + 0.5, p[1] + 0.5, 3) : null; }, enter: (g) => { const p = nearestDeposit(g, DEPOSIT.QUARTZ); if (p) g.focus(p[0], p[1]); }, done: (g) => countType(g.s, 'quarry') > 0 },
-  { text: 'Quartz is useless until refined. Place a <b>Silicon Furnace</b> between the extractor and the Core. Watch the <b style="color:#6fe9ff">cyan dashed lines</b>: <b>auto-link</b> shows the belts it will build (extractor → furnace → Core).', target: '#build .bitem[data-type="furnace"]', done: (g) => linked(g, 'quarry', 'furnace') },
+  { text: 'Quartz is useless until refined. Pick the <b>Silicon Furnace</b> and place it in the highlighted spot <b>between the extractor and the Core</b> (belts reach 14 tiles). Watch the <b style="color:#6fe9ff">cyan dashed lines</b>: <b>auto-link</b> shows the belts it will build (extractor → furnace → Core) <i>before</i> you click.', target: (g) => { if (!(g.tool.kind === 'build' && g.tool.type === 'furnace')) { const el = document.querySelector('#build .bitem[data-type="furnace"]') as HTMLElement | null; return el && el.offsetParent ? el.getBoundingClientRect() : null; } const q = g.s.buildings.find((b) => b.type === 'quarry'); const h = hq(g.s); return q ? worldRect(g, (q.x + 1 + h.x + 1.5) / 2, (q.y + 1 + h.y + 1.5) / 2, 2.2) : null; }, done: (g) => linked(g, 'quarry', 'furnace') },
   { text: 'Belts now carry quartz and silicon. You can see every packet! Next, metal: an <b>Ore Drill</b> on the <b style="color:#ff9a50">rust-coloured ore</b>, then an <b>Ore Smelter</b> nearby.', target: (g) => { const p = nearestDeposit(g, DEPOSIT.ORE); return p ? worldRect(g, p[0] + 0.5, p[1] + 0.5, 3) : null; }, enter: (g) => { const p = nearestDeposit(g, DEPOSIT.ORE); if (p) g.focus(p[0], p[1]); }, done: (g) => linked(g, 'drill', 'smelter') },
   { text: '<b>Manual links:</b> press <kbd>L</kbd> (Link tool), click one building, then the other, in either order. To <b>remove</b> a link, hover it with <kbd>X</kbd> until it glows red, then click. Belts, junctions and links are free, and demolishing refunds 100%.', target: '#tools', next: true },
   { text: 'Solar sleeps at night. Build a <b>Battery Bank</b> (POWER) so your base keeps running. Its tooltip tells you how many you need.', target: '#build .tabs button[data-tab="power"]', done: (g) => countType(g.s, 'battery') > 0 },
+  { text: '<b>Overlays</b> show hidden systems: <kbd>P</kbd> power coverage and health, <kbd>H</kbd> heat, <kbd>N</kbd> the compute network, <kbd>O</kbd> logistics flow (amber = belt full, red = blocked). Each overlay shows a legend. Try one now.', target: '#ovbtns', done: (g) => g.view.overlay !== 'none' },
   { text: 'Click any building to inspect it: live <b>in/out per minute</b>, problems and fixes. Press <kbd>I</kbd> for <b>statistics</b> and <kbd>J</kbd> for the <b>Codex</b> (short chapters on everything). Your objectives are top right. Good luck!', target: '#side', next: true },
 ];
 
@@ -74,6 +75,8 @@ export class Tutorial {
     this.g.s.flags.tutorial = false;
     try { localStorage.setItem('sd_tutorial_done', '1'); } catch { /* */ }
   }
+  /** hide without marking the tutorial as done (e.g. a save was loaded) */
+  cancel() { this.active = false; this.hide(); }
   private hide() { this.spot.style.display = 'none'; this.bubble.style.display = 'none'; }
 
   private go(i: number) {

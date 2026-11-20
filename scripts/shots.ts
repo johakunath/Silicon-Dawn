@@ -151,6 +151,10 @@ if (scenario === 'stress') {
   await setView({ view: 12, tod: 0.45 });
   await page.evaluate(() => (window as any).__h.frames(90));
   await shot(`${scenario}_day`);
+  await setView({ view: 6.5, tod: 0.4 });
+  await page.evaluate(() => (window as any).__h.frames(60));
+  await shot(`${scenario}_closeup`);
+  await setView({ view: 12, tod: 0.45 });
   await setView({ tod: 0.97 });
   await page.evaluate(() => (window as any).__h.frames(90));
   await shot(`${scenario}_night`);
