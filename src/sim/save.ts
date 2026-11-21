@@ -1,5 +1,7 @@
 // Versioned save schema with forward migrations.
 import { BUILDING } from './data/buildings';
+import { EVENT } from './data/events';
+import { TECH } from './data/tech';
 import { Rng } from './rng';
 import { linksChanged, recomputeFx } from './sim';
 import { GameState, addBuildingRaw, emptyStats } from './state';
@@ -89,9 +91,49 @@ export function saveToString(s: GameState): string {
   return JSON.stringify(serialize(s));
 }
 
+const fin = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+const escMap: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const plain = (v: unknown, max = 80) => String(v ?? '').slice(0, max).replace(/[&<>"']/g, (c) => escMap[c]);
+
+/**
+ * Reject saves that would load into a broken or unsafe state (hand-edited, truncated or crafted files).
+ * Throws with a player-readable reason; also normalises a few fields in place (dedupe, unknown ids).
+ */
+export function validateSave(d: SaveV2, worldSize: number) {
+  const bad = (why: string): never => { throw new Error(`Save file is damaged (${why})`); };
+  if (!d || typeof d !== 'object' || Array.isArray(d)) bad('not an object');
+  if (!fin(d.seed)) bad('seed');
+  if (!fin(d.time) || d.time < 0 || !fin(d.tick) || d.tick < 0) bad('time');
+  if (!Number.isInteger(d.era) || d.era < 1 || d.era > 5) bad('era');
+  if (!fin(d.nextId) || !fin(d.nextLinkId)) bad('ids');
+  if (!Array.isArray(d.buildings) || !Array.isArray(d.links ?? [])) bad('lists');
+  const ids = new Set<number>();
+  let hqs = 0;
+  for (const b of d.buildings) {
+    const def = b && BUILDING[b.type];
+    if (!def) bad('unknown building');
+    if (!Number.isInteger(b.id) || ids.has(b.id)) bad('building id');
+    if (!Number.isInteger(b.x) || !Number.isInteger(b.y) || b.x < 0 || b.y < 0 || b.x + def.size > worldSize || b.y + def.size > worldSize) bad('building position');
+    if (!b.inBuf || typeof b.inBuf !== 'object' || !b.outBuf || typeof b.outBuf !== 'object') bad('building buffers');
+    for (const v of [...Object.values(b.inBuf), ...Object.values(b.outBuf)]) if (!fin(v)) bad('building buffers');
+    ids.add(b.id);
+    if (b.type === 'hq') hqs++;
+  }
+  if (hqs !== 1) bad('Command Core');
+  for (const l of d.links ?? []) if (!l || !fin(l.from) || !fin(l.to) || l.from === l.to) bad('link');
+  for (const v of Object.values(d.stock ?? {})) if (!fin(v)) bad('stock');
+  if (d.rp !== undefined && !fin(d.rp)) bad('research');
+  // normalise: unknown/duplicate techs and events are dropped, free text is escaped
+  d.techs = [...new Set((d.techs ?? []).filter((t) => typeof t === 'string' && TECH[t]))];
+  d.events = (d.events ?? []).filter((e) => e && EVENT[e.id] && fin(e.t) && fin(e.dur) && fin(e.warn));
+  d.contracts = (d.contracts ?? []).filter((c) => c && typeof c === 'object').map((c) => ({ ...c, title: plain(c.title) }));
+  d.eraScores = (d.eraScores ?? []).slice(0, 5);
+}
+
 export function loadFromObject(raw: unknown): GameState {
   const d = migrate(raw);
   const world = generateWorld(d.seed);
+  validateSave(d, world.size);
   const s: GameState = {
     version: SAVE_VERSION, seed: d.seed, difficulty: d.difficulty ?? 'standard', mode: d.mode ?? 'campaign', time: d.time, tick: d.tick,
     era: d.era, eraStart: d.eraStart ?? 0, done: d.done ?? {}, world, occ: new Int32Array(world.size * world.size), buildings: [],
@@ -104,8 +146,7 @@ export function loadFromObject(raw: unknown): GameState {
     autoLink: d.autoLink ?? true,
   };
   s.rng.s = d.rng >>> 0 || 1;
-  for (const b of d.buildings ?? []) {
-    if (!BUILDING[b.type]) continue;
+  for (const b of d.buildings) {
     addBuildingRaw(s, { ...({ rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, pw: 0 } as Partial<Building>), ...b } as Building);
   }
   s.links = s.links.filter((l) => s.byId.has(l.from) && s.byId.has(l.to));

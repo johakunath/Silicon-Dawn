@@ -637,7 +637,7 @@ function finishContract(s: GameState, c: Contract, ok: boolean) {
 
 // ───────── objectives & eras ─────────
 export function checkObjectives(s: GameState) {
-  if (s.mode === 'sandbox') return;
+  if (s.mode === 'sandbox' || s.flags.campaignDone) return; // campaign over: never re-score era 5
   const era = ERAS[s.era - 1];
   if (!era) return;
   let all = true;

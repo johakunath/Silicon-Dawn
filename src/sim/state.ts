@@ -96,7 +96,7 @@ export interface GameState {
 
 export const BASE_FX: TechEffects = {
   solarMul: 1, windMul: 1, conveyorMul: 1, dataMul: 1, extractMul: 1, refineMul: 1, computeMul: 1,
-  coolingMul: 1, coolingPowerMul: 1, batteryMul: 1, eventResist: 0, autoRepair: 0, fiber: 0, fusion: 0,
+  coolingMul: 1, coolingPowerMul: 1, batteryMul: 1, eventResist: 0, autoRepair: 1, fiber: 0, fusion: 0,
   robots: 0, bufferMul: 1, heatTolerance: 0,
 };
 

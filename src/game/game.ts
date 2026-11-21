@@ -92,6 +92,11 @@ export class Game {
     this.hud = new Hud(this, ui);
     this.applySettings();
     window.addEventListener('resize', () => this.applySettings());
+    // save when the tab is hidden or closed (also covers building while paused, which the timer skips)
+    window.addEventListener('pagehide', () => this.autosave());
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') this.autosave(); });
+    // ask the browser not to evict local saves under storage pressure (best effort, silently ignored if refused)
+    navigator.storage?.persist?.().catch(() => {});
     this.bindInput(canvas);
     (window as any).__sd = this; // debug / screenshot hooks
   }
@@ -140,6 +145,7 @@ export class Game {
   loadJson(json: string): boolean {
     try {
       const s = loadFromString(json);
+      rebuildGrids(s); step(s); // fail here, before the running game is replaced
       this.s = s;
       this.view.setState(s);
       this.view.frontierAnim = 1;
@@ -148,7 +154,6 @@ export class Game {
       this.started = true;
       this.paused = false;
       this.finale = s.engine.ignited ? 1 : 0;
-      rebuildGrids(s); step(s);
       this.hud.tutorial.cancel();
       this.hud.onNewState();
       this.hud.refreshSpeed();
@@ -162,9 +167,17 @@ export class Game {
 
   saveJson(): string { return saveToString(this.s); }
 
+  private saveWarned = false;
   autosave() {
     if (!this.started) return;
-    try { localStorage.setItem(AUTOSAVE_KEY, this.saveJson()); } catch { /* quota */ }
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, this.saveJson());
+      this.saveWarned = false;
+    } catch {
+      // storage full or blocked (private mode): tell the player once, so progress isn't silently lost
+      if (!this.saveWarned) this.hud.toast('Autosave failed: browser storage is full or blocked. Use Menu → Export to keep a copy.', 'bad');
+      this.saveWarned = true;
+    }
   }
 
   // ───────── camera ─────────
@@ -458,9 +471,19 @@ export class Game {
   }
 
   // ───────── frame ─────────
+  private frameErrors = 0;
   frame = () => {
-    this.tickFrame(Math.min(0.1, this.clock.getDelta()));
+    // schedule first: one exception in a frame must not freeze the game for good
     requestAnimationFrame(this.frame);
+    try {
+      this.tickFrame(Math.min(0.1, this.clock.getDelta()));
+    } catch (e) {
+      if (this.frameErrors++ === 0) {
+        console.error(e);
+        this.autosave();
+        this.hud.toast('Something went wrong. Your game was autosaved; reload the page if it misbehaves.', 'bad');
+      }
+    }
   };
 
   /** one full frame (sim + render + UI); exposed for screenshots/benchmarks */

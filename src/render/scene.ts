@@ -80,7 +80,11 @@ export class SceneRig {
   private fogNight = new THREE.Color();
 
   constructor(canvas: HTMLCanvasElement) {
-    this.renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', preserveDrawingBuffer: true });
+    this.renderer = new THREE.WebGLRenderer({
+      canvas, powerPreference: 'high-performance',
+      // MSAA happens in the composer's render target; canvas AA is wasted. Drawing-buffer preservation only for dev screenshot scripts.
+      antialias: false, preserveDrawingBuffer: import.meta.env.DEV,
+    });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;

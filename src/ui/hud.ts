@@ -425,10 +425,13 @@ export class Hud {
       else html += `<div class="pb"><i style="width:${Math.min(100, pr * 100)}%"></i></div><div class="d">${isT ? `${fmt(c.progress)} / ${fmt(c.target)} · ${Math.ceil(c.duration - c.t)}s left` : `serving ${fmt(s.stats.inferenceRate)}/s · uptime ${Math.round(c.uptime * 100)}% · ${Math.ceil(c.duration - c.t)}s left`}</div>`;
       html += `</div>`;
     }
-    if (el.innerHTML !== html) {
-      el.innerHTML = html;
-      el.querySelectorAll<HTMLElement>('button[data-c]').forEach((b) => (b.onclick = () => { if (!acceptContract(s, Number(b.dataset.c))) { audio.play('error'); this.toast('You can only run one contract of each kind at a time', 'warn'); } }));
-    }
+    if (el.innerHTML !== html) el.innerHTML = html;
+    // delegated pointerdown: the list re-renders every second (countdowns), which would swallow a normal click
+    el.onpointerdown = (e) => {
+      const btn = e.button === 0 ? (e.target as HTMLElement).closest<HTMLElement>('button[data-c]') : null;
+      if (!btn) return;
+      if (!acceptContract(s, Number(btn.dataset.c))) { audio.play('error'); this.toast('You can only run one contract of each kind at a time', 'warn'); }
+    };
   }
 
   private updateEvents() {
@@ -510,16 +513,22 @@ export class Hud {
     if (l) {
       const A = s.byId.get(l.from)!, B = s.byId.get(l.to)!;
       const cap = LINKS[l.kind].capacity * (l.kind === 'conveyor' ? s.fx.conveyorMul : l.kind === 'pipe' ? 1 : s.fx.dataMul);
-      el.innerHTML = `<div class="hd"><div><h3>${LINKS[l.kind].name}</h3><div class="role">${BUILDING[A.type].name} → ${BUILDING[B.type].name}</div></div></div>
-        <div class="stat ${l.state === 'blocked' ? 'bad' : l.state === 'saturated' ? 'warn' : 'ok'}">${l.state === 'blocked' ? '✕ Blocked: the destination is full or stalled' : l.state === 'saturated' ? '▲ Saturated: at full capacity. Add a parallel link.' : l.state === 'idle' ? '○ Idle: the source has nothing to send' : '✓ Flowing'}</div>
-        <div class="kv"><span class="k">Carries</span><span class="v">${itemIcon(l.item, 14)} ${ITEMS[l.item].name}</span><span class="k">Flow</span><span class="v">${l.rate.toFixed(2)} / ${cap.toFixed(1)} per s</span><span class="k">Length</span><span class="v">${l.length.toFixed(1)} tiles</span><span class="k">Moved total</span><span class="v">${fmt(l.total)}</span></div>
-        <div class="acts"><button id="i-unlink">✕ REMOVE LINK</button></div>`;
-      (el.querySelector('#i-unlink') as HTMLElement).onclick = () => { removeLink(s, l.id); g.select(null); };
+      const live = `<div class="stat ${l.state === 'blocked' ? 'bad' : l.state === 'saturated' ? 'warn' : 'ok'}">${l.state === 'blocked' ? '✕ Blocked: the destination is full or stalled' : l.state === 'saturated' ? '▲ Saturated: at full capacity. Add a parallel link.' : l.state === 'idle' ? '○ Idle: the source has nothing to send' : '✓ Flowing'}</div>
+        <div class="kv"><span class="k">Carries</span><span class="v">${itemIcon(l.item, 14)} ${ITEMS[l.item].name}</span><span class="k">Flow</span><span class="v">${l.rate.toFixed(2)} / ${cap.toFixed(1)} per s</span><span class="k">Length</span><span class="v">${l.length.toFixed(1)} tiles</span><span class="k">Moved total</span><span class="v">${fmt(l.total)}</span></div>`;
+      // rebuild the shell (and its buttons) only when the selection changes: rebuilding on every refresh swallowed clicks
+      const key = `L${l.id}`;
+      if (el.dataset.key !== key) {
+        el.dataset.key = key;
+        el.innerHTML = `<div class="hd"><div><h3>${LINKS[l.kind].name}</h3><div class="role">${BUILDING[A.type].name} → ${BUILDING[B.type].name}</div></div></div>
+        <div data-live></div><div class="acts"><button id="i-unlink">✕ REMOVE LINK</button></div>`;
+        (el.querySelector('#i-unlink') as HTMLElement).onclick = () => { removeLink(s, l.id); g.select(null); };
+      }
+      this.patch(el.querySelector('[data-live]'), live);
       return;
     }
     if (!b) return;
-    if (!force && el.dataset.id === String(b.id) && el.dataset.t === String(Math.floor(g.realTime * 4))) return;
-    el.dataset.id = String(b.id); el.dataset.t = String(Math.floor(g.realTime * 4));
+    if (!force && el.dataset.key === `B${b.id}` && el.dataset.t === String(Math.floor(g.realTime * 4))) return;
+    el.dataset.t = String(Math.floor(g.realTime * 4));
     const d = BUILDING[b.type];
     const info = explain(s, b);
     let kv = '';
@@ -556,20 +565,33 @@ export class Hud {
     const inL = s.links.filter((x) => x.to === b.id), outL = s.links.filter((x) => x.from === b.id);
     const flows = inL.map((l) => flowRow(l, 'in')).concat(outL.map((l) => flowRow(l, 'out'))).join('') || '<div class="flow dim">No links yet. Use the Link tool (L).</div>';
     const ratios = ratioLines(s, d);
-    el.innerHTML = `<div class="hd"><img src="${thumb(b.type)}"><div><h3>${d.name}</h3><div class="role">${d.desc}</div></div></div>
-      <div class="stat ${info.level === 'info' ? 'warn' : info.level}"><b style="font-size:20px">${info.glyph}</b><div><b>${info.title}</b><br>${info.text}</div></div>
+    const live = `<div class="stat ${info.level === 'info' ? 'warn' : info.level}"><b style="font-size:20px">${info.glyph}</b><div><b>${info.title}</b><br>${info.text}</div></div>
       <div class="kv">${kv}</div>${bufs.join('')}
-      <div class="ptitle" style="margin-top:10px;font-size:15px">FLOWS (live)</div>${flows}
-      ${ratios.length ? `<details class="ratio"><summary>How many do I need?</summary>${ratios.map((r) => `<div>${r}</div>`).join('')}</details>` : ''}
-      ${b.type === 'hq' ? this.coreSummary() : ''}
+      <div class="ptitle" style="margin-top:10px;font-size:15px">FLOWS (live)</div>${flows}`;
+    const ratioHtml = ratios.length ? `<details class="ratio"><summary>How many do I need?</summary>${ratios.map((r) => `<div>${r}</div>`).join('')}</details>` : '';
+    // Static shell (header, ratio <details>, action buttons) is rebuilt only when the selection or its button set
+    // changes; live values are patched in place. Rebuilding everything at 4 Hz swallowed clicks and closed <details>.
+    const key = `B${b.id}|${b.broken > 0}|${ratioHtml.length}`;
+    if (force || el.dataset.key !== key) {
+      el.dataset.key = key;
+      el.innerHTML = `<div class="hd"><img src="${thumb(b.type)}"><div><h3>${d.name}</h3><div class="role">${d.desc}</div></div></div>
+      <div data-live></div>${ratioHtml}<div data-core></div>
       <div class="acts">${b.type === 'hq' ? '<button id="i-stats" data-tip="Full production & power statistics (I)">📊 STATISTICS <kbd>I</kbd></button>' : ''}${b.type === 'pod' ? '<button id="i-mode" data-tip="Cycle Balanced → Training → Inference">MODE <kbd>M</kbd></button>' : ''}${b.broken > 0 ? '<button id="i-rep">REPAIR (10 metal) <kbd>R</kbd></button>' : ''}<button id="i-link" data-tip="Start a link from this building, then click the other building">⟿ CONNECT <kbd>L</kbd></button>${b.type !== 'hq' ? '<button id="i-move" data-tip="Pick it up and place it elsewhere (free)">✥ MOVE <kbd>V</kbd></button><button id="i-del" data-tip="Remove it. Refunds 100%.">✕ DEMOLISH <kbd>Del</kbd></button>' : ''}</div>`;
-    const q = (id: string) => el.querySelector(id) as HTMLElement | null;
-    q('#i-mode')?.addEventListener('click', () => { cycleMode(s, b.id); this.refreshInspector(true); });
-    q('#i-rep')?.addEventListener('click', () => { if (!repair(s, b.id)) audio.play('error'); });
-    q('#i-link')?.addEventListener('click', () => g.setTool({ kind: 'link', from: b.id }));
-    q('#i-move')?.addEventListener('click', () => g.setTool({ kind: 'move', id: b.id }));
-    q('#i-stats')?.addEventListener('click', () => this.openStats());
-    q('#i-del')?.addEventListener('click', () => g.demolishBuilding(b));
+      const q = (id: string) => el.querySelector(id) as HTMLElement | null;
+      q('#i-mode')?.addEventListener('click', () => { cycleMode(s, b.id); this.refreshInspector(true); });
+      q('#i-rep')?.addEventListener('click', () => { if (!repair(s, b.id)) audio.play('error'); });
+      q('#i-link')?.addEventListener('click', () => g.setTool({ kind: 'link', from: b.id }));
+      q('#i-move')?.addEventListener('click', () => g.setTool({ kind: 'move', id: b.id }));
+      q('#i-stats')?.addEventListener('click', () => this.openStats());
+      q('#i-del')?.addEventListener('click', () => g.demolishBuilding(b));
+    }
+    this.patch(el.querySelector('[data-live]'), live);
+    this.patch(el.querySelector('[data-core]'), b.type === 'hq' ? this.coreSummary() : '');
+  }
+
+  /** replace an element's HTML only when it actually changed (keeps hover/focus state and avoids layout churn) */
+  private patch(el: Element | null, html: string) {
+    if (el && el.innerHTML !== html) el.innerHTML = html;
   }
 
   // ───────── tooltips ─────────
@@ -676,8 +698,11 @@ export class Hud {
   closeModals() {
     if (this.openModal === 'title') return;
     for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats']) this.els[id].classList.remove('show');
-    if (this.openModal) audio.play('close');
+    const was = this.openModal;
+    if (was) audio.play('close');
     this.openModal = null;
+    // a modal opened from the title screen (e.g. LOAD…) must return there, not to a dead, unstarted game
+    if (was && !this.g.started) this.showTitle();
   }
   private show(id: string) {
     for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats']) this.els[m].classList.toggle('show', m === id);
@@ -810,7 +835,7 @@ export class Hud {
     const g = this.g;
     const m = this.els.save;
     const slot = (k: string) => { try { const v = localStorage.getItem(k); if (!v) return null; const d = JSON.parse(v); return d; } catch { return null; } };
-    const desc = (d: any) => d ? `Era ${d.era} · ${Math.round(d.time / 60)} min · ${d.buildings.length} buildings · ${new Date(d.savedAt).toLocaleString()}` : 'empty';
+    const desc = (d: any) => d ? `Era ${Number(d.era) | 0} · ${Math.round(Number(d.time) / 60) || 0} min · ${Array.isArray(d.buildings) ? d.buildings.length : 0} buildings · ${new Date(String(d.savedAt)).toLocaleString()}` : 'empty';
     const rows = ['sd_save_1', 'sd_save_2', 'sd_save_3'].map((k, i) => `<div class="setrow"><label>Slot ${i + 1}</label><span style="flex:1;font-size:15px;color:#93a4c4">${desc(slot(k))}</span><button data-save="${k}">SAVE</button><button data-load="${k}" ${slot(k) ? '' : 'disabled'}>LOAD</button></div>`).join('');
     m.innerHTML = `<div class="mcard panel" style="width:900px"><h1>SAVE / LOAD</h1>
       <div class="setrow"><label>Autosave</label><span style="flex:1;font-size:15px;color:#93a4c4">${desc(slot(AUTOSAVE_KEY))}</span><button data-load="${AUTOSAVE_KEY}" ${slot(AUTOSAVE_KEY) ? '' : 'disabled'}>LOAD</button></div>${rows}
@@ -839,7 +864,7 @@ export class Hud {
     const m = this.els.title;
     const auto = localStorage.getItem(AUTOSAVE_KEY);
     let autoDesc = '';
-    try { if (auto) { const d = JSON.parse(auto); autoDesc = `Era ${d.era} · ${Math.round(d.time / 60)} min`; } } catch { /* */ }
+    try { if (auto) { const d = JSON.parse(auto); autoDesc = `Era ${Number(d.era) | 0} · ${Math.round(Number(d.time) / 60) || 0} min`; } } catch { /* */ }
     const sandbox = localStorage.getItem('sd_sandbox_unlocked') === '1' || new URLSearchParams(location.search).has('sandbox');
     m.innerHTML = `<div class="tcard"><h1>SILICON<br>DAWN</h1><div class="sub">FROM SAND TO SENTIENCE</div>
       ${auto ? `<div class="row"><button class="primary" id="t-cont">CONTINUE · ${autoDesc}</button></div>` : ''}
@@ -888,6 +913,6 @@ export class Hud {
       <div class="mact" style="justify-content:center"><button data-k>KEEP WATCHING</button><button class="primary" data-t>MAIN MENU</button></div></div>`;
     (m.querySelector('[data-k]') as HTMLElement).onclick = () => { m.classList.remove('show'); this.openModal = null; };
     (m.querySelector('[data-t]') as HTMLElement).onclick = () => { m.classList.remove('show'); this.openModal = null; this.showTitle(); };
-    setTimeout(() => this.show('finale'), 9000);
+    setTimeout(() => { if (this.g.started && this.g.s === s) this.show('finale'); }, 9000);
   }
 }

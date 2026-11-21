@@ -204,6 +204,31 @@ describe('save/load', () => {
     expect(() => migrate(null)).toThrow();
     expect(() => migrate({ version: 99 })).toThrow();
   });
+  it('rejects damaged or crafted saves instead of loading a broken state', () => {
+    const good = JSON.parse(saveToString(createState(SEED)));
+    expect(() => loadFromString('{}')).toThrow();
+    expect(() => loadFromString('[]')).toThrow();
+    expect(() => loadFromObject({ version: 2 })).toThrow();
+    expect(() => loadFromObject({ ...good, buildings: good.buildings.filter((b: any) => b.type !== 'hq') })).toThrow(/Command Core/);
+    expect(() => loadFromObject({ ...good, buildings: [...good.buildings, { ...good.buildings[0], id: 999, x: 10_000 }] })).toThrow(/position/);
+    expect(() => loadFromObject({ ...good, time: 'x' })).toThrow();
+    expect(() => loadFromObject({ ...good, era: 9 })).toThrow(/era/);
+    const s = loadFromObject({ ...good, techs: ['nope', 'nope'], events: [{ id: 'bogus', t: 1, dur: 1, warn: 0 }],
+      contracts: [{ id: 1, kind: 'training', title: '<img src=x onerror=alert(1)>', target: 1, duration: 1, t: 0, progress: 0, uptime: 0, reward: { rp: 0, items: {} }, state: 'offered', expires: 10 }] });
+    expect(s.techs).toEqual([]);
+    expect(s.events).toEqual([]);
+    expect(s.contracts[0].title).not.toContain('<');
+  });
+});
+
+describe('reliability', () => {
+  it('buildings broken by an event repair on their own over time', () => {
+    const s = createState(SEED);
+    const b = hq(s);
+    b.broken = 5;
+    run(s, 10);
+    expect(b.broken).toBe(0);
+  });
 });
 
 describe('autoplayer', () => {
@@ -219,6 +244,8 @@ describe('autoplayer', () => {
     expect(r.problems).toEqual([]);
     expect(s.flags.campaignDone).toBe(true);
     expect(s.engine.ignited).toBe(true);
+    expect(s.eraScores.length).toBe(5);
+    run(s, 120); // the finished campaign must not keep re-scoring era 5 (bloated saves)
     expect(s.eraScores.length).toBe(5);
   }, 60000);
   it('storage ships stockpiled goods to consumers', () => {

@@ -4,6 +4,8 @@ An isometric strategy and automation game about building the **physical infrastr
 
 Built with **Vite, TypeScript and Three.js** (WebGL). It plays best on a gaming PC with a large monitor.
 
+**Play online:** https://johakunath.github.io/Silicon-Dawn/ (saves stay in your browser's local storage; use Menu → Save/Load → Export JSON to keep a portable copy).
+
 ## Run
 
 ```bash
@@ -20,6 +22,8 @@ npm run build
 ```
 
 The output goes to `dist/`. Serve it from any static host, for example with `npm run preview`.
+
+Every push to `master` runs the tests, builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
 
 ## Test
 
