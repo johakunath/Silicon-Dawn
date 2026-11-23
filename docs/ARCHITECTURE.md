@@ -5,7 +5,7 @@
  input ──►  │ actions.ts ──► GameState ◄── sim.step() @ 10 Hz fixed tick  │
  (game/)    │   place/link/research      power.ts  flow  heat  workloads  │
             │                            events  contracts  objectives    │
-            │ data/*.ts  (buildings, items, eras, tech, events, guide)    │
+            │ market.ts  demand, serving, models   data/*.ts (content)    │
             └───────┬───────────────────────────────┬─────────────────────┘
                     │ reads state                   │ state.signals[] (build, era, ignite…)
             ┌───────▼────────┐               ┌──────▼──────────┐
@@ -29,7 +29,8 @@
 - **Every status explains itself.** `Building.status` and `statusItem` feed `ui/status.ts`, which turns them into a title, a glyph and an explanation.
 - **Progression.** Each era has objectives (`data/eras.ts`) with progress functions. When an era's objectives are all done, it is scored (efficiency = pace + PUE, reliability = demand-weighted grid health, footprint = clean energy share), the frontier radius grows, and new content unlocks.
 - **Economy** (`economy.ts`, numbers in `data/economy.ts`). `GameState.econ` holds the balance and cumulative income and cost lines. `econTick()` runs at the end of every step (power bought and sold at the Core, fuel, water, upkeep, interest, stipend); `econSecond()` runs once per second (exports above the keep level, emergency grant). Capex is charged in `actions.place()` and refunded in `demolish()`. `unitEcon()` and `liveByType()` feed the ledger and tooltips.
-- **Saves** (`save.ts`) use a versioned JSON schema. `migrate()` applies stepwise migrations (v1 → v2 → v3 are implemented and tested), and the loader rebuilds derived state.
+- **Market** (`market.ts`, numbers in `data/market.ts`). `GameState.market` holds the frontier, reputation, the model shelf, the deployed model and the current training run. Every tick `marketTrain()` adds the Training Cores' output to the run (and ships a model when it is done); once per second `marketSecond()` opens the market in Era III, grows the frontier, follows gateway uptime and calls `allocate()`, which serves the five segments from the gateways' compute (`stats.inferenceRate`) and pays the revenue into `econ.income.market`. `estimate()` runs the same allocation for any shelf model (UI and auto-deploy).
+- **Saves** (`save.ts`) use a versioned JSON schema. `migrate()` applies stepwise migrations (v1 → v2 → v3 → v4 are implemented and tested), and the loader rebuilds derived state.
 
 ## Rendering (`src/render`)
 
@@ -49,6 +50,7 @@
 
 ## UI and audio
 
+- The Market & Models modal (`B`) and the sidebar market card with special orders live in `ui/market.ts` and `ui/market.css`; `hud.ts` only hooks them in.
 - The ledger (`ui/ledger.ts`, `ui/ledger.css`) renders the credits chip, the ledger modal (`K`) and the money rows in build tooltips; `hud.ts` only hooks it in.
 - The DOM HUD (`ui/hud.ts`) has heavy parts throttled to 4 Hz, and the badges follow buildings every frame. Badges are colour-blind safe: an octagon ✕ means severe, a triangle ▲ means a warning, plus a glyph.
 - Menu rows for graphics live in `ui/settings.ts`. Cloud save (`ui/cloudsave.ts`) treats the save as an opaque string from `Game.saveJson()`, gzips it and posts it as `text/plain` to the owner's Apps Script web app (`tools/apps-script/Code.gs`, which stores it in 40,000-character Sheet rows).

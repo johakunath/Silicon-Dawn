@@ -5,14 +5,14 @@ Priority order, top first. Each epic is one bigger work package (WP), roughly on
 **Every WP includes:** the design loop (2 options or mockups, pick, log the decision in `docs/DESIGN.md`), tests for new rules, an autoplayer balance check (campaign still completes, no soft-lock), Codex text for new concepts, a `CHANGELOG.md` line.
 
 ## Current state (2026-11-23)
-Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, 25 Vitest tests, and an autoplayer that completes the campaign. E1 added money (credits, running costs, ledger). There is no market and no telemetry yet. The owner will play only once the game feels finished.
+Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, Vitest tests, and an autoplayer that completes the campaign. E1 added money (credits, running costs, ledger). E3 added the colony market and the model lifecycle. There is no telemetry yet. The owner will play only once the game feels finished.
 
 ## Overview
 | # | Epic | Depends on | Status |
 |---|---|---|---|
 | E1 | Colony economy: money, running costs, ledger | none | done |
 | E2 | Tablet and quality profiles: touch controls, graphics profiles, cloud save | none | done |
-| E3 | Market and models: demand, model lifecycle, revenue | E1 | doing (ccr-fff314f0-bhdtti) |
+| E3 | Market and models: demand, model lifecycle, revenue | E1 | done |
 | E4 | Operations: wear, Service Center, power deals, light hardware tiers | E1 | todo |
 | E5 | Decision events and politics | E1 (E3 helps) | todo |
 | E6 | Setting pass: sci-fi colony framing, intro, eras, Codex | E3 | todo |
@@ -41,7 +41,7 @@ Goal: the game plays well on desktop and on a Samsung Galaxy Tab S9 (11-inch, 25
 - **Cloud save:** Google Sheet plus Apps Script web app (`tools/apps-script/`), personal sync code, gzip, chunked rows, `text/plain` POSTs. Built so E8 can add telemetry and scores as new ops.
 - Hotspots: hud, game (small hook lines only). Size: M–L.
 
-## E3 Market and models (doing, branch `ccr-fff314f0-bhdtti`)
+## E3 Market and models (done)
 Goal: colony demand that keeps growing and pays for compute; training creates models that earn money and then age.
 - **Design:** two market models (segments with demand curves vs. a single price curve with tiers), pick one. Two Market and Models panel mockups.
 - **Sim:** demand segments (chat, code, enterprise, science, media) with price, latency and uptime needs; reputation from uptime; lost revenue from unserved demand. `Model` entity from Training Core (quality from compute and fiber share), deploy to Gateways, value decays as the frontier rises. Contracts become special orders.
@@ -90,5 +90,6 @@ Goal: when the owner and friends play online, runs are logged so the game can be
 - Size: L.
 
 ## Done
+- 2026-11-23: E3 Market and models (five demand segments, latency from load, reputation from uptime, Lite/Standard/Max models aging against a frontier, auto-deploy, special orders, Market & Models panel, save v4). Follow-ups: Era V runs over its new 30-minute par on 2 of 5 seeds (26–48 min) and Era III on 2 of 5 (up to 37 min); the top bar overflow at 1920 px from E1 is still open; tutorial tips for the market belong in E9.
 - 2026-11-23: E1 Colony economy (credits, capex and opex, exports, funding rounds, emergency grants, ledger, save v3). Follow-ups for E3: Era IV pacing runs over par on 3 of 5 seeds; the top bar overflows at 1920 px in Era IV and later (pre-existing, slightly worse with the credits chip).
 - 2026-11-23: doc review and restructure (CLAUDE.md, BACKLOG, CHANGELOG, docs/), research and top 10 ideas, deploy workflow on `main`.

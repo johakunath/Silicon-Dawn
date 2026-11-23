@@ -1,0 +1,44 @@
+/* Market & Models modal and sidebar card (E3). Reuses the ledger card, KPI tiles and .lh headings. */
+.market .vi { color: var(--violet); }
+.market .sm { font-size: 13px; }
+.market .num { text-align: right; font-variant-numeric: tabular-nums; }
+.mkgrid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 28px; }
+.mkrow { display: grid; grid-template-columns: 92px 150px minmax(80px, 1fr) 62px 52px 100px; white-space: nowrap; align-items: center; gap: 8px; font-size: 15px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.05); }
+.mkrow.head { color: var(--dim); font-size: 13px; letter-spacing: .04em; border-bottom: 1px solid var(--line); }
+.mkrow .sn { font-weight: 600; }
+.mkrow > span:nth-child(2) { font-size: 13px; }
+.mkbar { position: relative; height: 12px; background: rgba(255,255,255,.06); }
+.mkbar i { position: absolute; left: 0; top: 0; bottom: 0; }
+.mkbar i.dem { background: rgba(111,233,255,.22); }
+.mkbar i.srv { background: var(--cyan); }
+.mkchart { display: block; max-width: 640px; }
+.mkrun { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 16px; }
+.pb.mk { height: 6px; background: rgba(255,255,255,.1); margin-top: 6px; }
+.pb.mk i { display: block; height: 100%; background: var(--magenta); }
+.pb.mk.big { height: 10px; margin: 6px 0 4px; }
+.mksizes { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.mksize { font-size: 14px; padding: 4px 12px; border-color: #34405a; color: var(--dim); }
+.mksize.on { border-color: var(--green); color: var(--text); background: rgba(93,255,154,.08); }
+.mkauto { float: right; font-family: var(--body); font-size: 13px; letter-spacing: 0; color: var(--dim); cursor: pointer; pointer-events: auto; }
+.mkauto .box { display: inline-block; width: 15px; height: 15px; line-height: 15px; text-align: center; border: 1px solid #5a6a88; margin-right: 4px; vertical-align: -3px; font-size: 12px; }
+.mkauto .box.on { border-color: var(--green); color: var(--green); }
+.mkcard { border: 1px solid var(--line); background: rgba(16,22,44,.9); padding: 8px 12px; margin-top: 8px; }
+.mkcard.live { border-color: var(--green); background: rgba(16,34,28,.9); }
+.mkcard.live .mkh b { color: var(--green); }
+.mkh { display: flex; justify-content: space-between; gap: 8px; font-size: 16px; }
+.mkq { display: grid; grid-template-columns: 52px 1fr 48px; gap: 8px; align-items: center; margin: 4px 0; font-size: 14px; }
+.mkq b { text-align: right; }
+.qbar { position: relative; height: 9px; background: rgba(255,255,255,.08); }
+.qbar i { display: block; height: 100%; background: var(--cyan); }
+.qbar em { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--violet); }
+.mkbtn { display: flex; gap: 8px; margin-top: 6px; }
+.mkbtn button { font-size: 13px; padding: 3px 12px; }
+.mkbtn button[data-retire] { border-color: #34405a; color: var(--dim); }
+/* sidebar card */
+#contracts h3 .mklink { float: right; font-family: var(--body); font-size: 13px; letter-spacing: 0; color: var(--cyan); cursor: pointer; }
+.mkrev { display: flex; justify-content: space-between; align-items: baseline; }
+.mkrev b { font-family: var(--display); font-size: 24px; color: var(--green); }
+.mkrev .r { color: #ff8a8a; font-size: 14px; }
+#contracts > .d { font-size: 14px; color: var(--dim); margin-top: 2px; }
+#contracts .ptitle { margin-top: 10px; font-size: 14px; }
+@media (max-width: 1000px) { .mkgrid { grid-template-columns: 1fr; } .mkrow { grid-template-columns: 80px 1fr 62px 52px; } .mkrow > span:nth-child(2), .mkrow > :nth-child(6) { display: none; } }

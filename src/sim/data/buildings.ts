@@ -111,13 +111,13 @@ export const BUILDINGS: BuildingDef[] = [
     cost: { metal: 90, silicon: 50, chips: 36 }, power: -36, inputs: { coolant: 1.5 }, outputs: { compute: 30 }, it: true,
   },
   {
-    id: 'gateway', name: 'Inference Gateway', short: 'Serves inference contracts', era: 3, cat: 'workload', size: 2,
-    desc: 'Answers user requests with a trained model. Inference contracts need steady compute here, so uptime matters.',
+    id: 'gateway', name: 'Inference Gateway', short: 'Sells answers to the colony market', era: 3, cat: 'workload', size: 2,
+    desc: 'Answers colony requests with your deployed model and earns market revenue. Each takes up to 60 compute/s. Uptime builds reputation; spare capacity keeps latency low.',
     cost: { metal: 30, chips: 12 }, power: -4, inputs: { compute: 60 }, workload: 'inference',
   },
   {
-    id: 'trainer', name: 'Training Core', short: 'Runs training jobs', era: 3, cat: 'workload', size: 3,
-    desc: 'Coordinates a training run across all compute linked to it. Compute that arrives over fiber trains about twice as efficiently.',
+    id: 'trainer', name: 'Training Core', short: 'Trains your next model', era: 3, cat: 'workload', size: 3,
+    desc: 'Runs the next model\'s training across all compute linked to it (pick the size with B). Compute over fiber trains about twice as fast and ships a better model.',
     cost: { metal: 60, chips: 30 }, power: -10, inputs: { compute: 240 }, workload: 'training',
   },
 

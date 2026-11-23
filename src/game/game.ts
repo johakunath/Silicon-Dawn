@@ -370,6 +370,7 @@ export class Game {
       case 't': this.hud.openTech(); break;
       case 'i': this.hud.openStats(); break;
       case 'k': this.hud.openLedger(); break;
+      case 'b': this.hud.openMarket(); break;
       case 'j': case 'f1': this.hud.openGuide(); e.preventDefault(); break;
       case 'c': case 'home': this.focusCore(); break;
       case 'f': if (this.view.selected) { const b = this.view.selected; const d = BUILDING[b.type]; this.focus(b.x + d.size / 2, b.y + d.size / 2); } break;
@@ -710,6 +711,8 @@ export class Game {
         case 'contract_done': audio.play('contract'); break;
         case 'contract_fail': audio.play('fail'); break;
         case 'funding': audio.play('contract'); break;
+        case 'model_shipped': audio.play('contract'); break;
+        case 'market_open': audio.play('open'); break;
         case 'grant': audio.play('fail'); break;
         case 'break': audio.play('break'); break;
         case 'repair': audio.play('repair'); break;

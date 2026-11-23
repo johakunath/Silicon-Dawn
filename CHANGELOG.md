@@ -3,6 +3,12 @@
 Newest first. Each entry says what a player notices. Technical detail lives in the commit history.
 
 ## Unreleased
+- Colony market (Era III on): five customer segments (chat, media, code, enterprise, science) with their own price, model quality, latency and uptime needs, and demand that keeps growing. Inference Gateways sell answers with your deployed model; spare capacity keeps latency low, uptime builds reputation, and the panel shows lost revenue and why.
+- Models: the Training Core always trains your next model (Lite, Standard or Max). Models age as rival labs push the frontier, bigger models answer better but cost more compute per answer, and auto-deploy keeps the best earner live. Every colony starts with an open baseline model.
+- Market & Models panel (`B`, or the Market card on the right): revenue, lost demand, reputation, gateway load and latency, the frontier, a revenue chart, the training run, the model shelf with deploy and retire.
+- Contracts are now rarer special orders. Era III to V objectives are about shipping models and market revenue. New Codex chapter "Market & models".
+- Balance: the campaign runs about 80 to 110 minutes on the test seeds (was 105 to 140); Era IV is much shorter, par moves from Era IV to Era V; the Era III funding round is ¢4,500.
+- Saves move to version 4; older saves open the market on their first second in Era III or later.
 - Colony economy: buildings cost credits as well as materials, and every minute costs upkeep, power bought through the Core (cheap at noon, expensive at dusk), gas fuel and water. Credits come from exports of surplus metal, silicon and chips, contracts, power sold, a funding round at each new era and a small Core stipend. Deep debt triggers an emergency grant that lowers the era score, so you can never get stuck broke.
 - Ledger (`K`, or click the credits chip): income and costs per minute, balance trend, power price over the day, cost per 1,000 compute, utilisation, payback for every building type, and SELL/HOLD switches for exports.
 - Build tooltips show capex, running cost and payback (or cost per compute). New Codex chapter "Unit economics".

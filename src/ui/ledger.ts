@@ -131,7 +131,7 @@ export class Ledger {
       h += `<div class="tt"><span>Income</span><b class="g">${sign(r.inc)}/min</b>${top(r.income, INCOME_NAME)}<span>Costs</span><b class="r">−${fmt(r.cost)}/min</b>${top(r.costs, COST_NAME)}</div>`;
     } else {
       // no history yet (e.g. paused at the start): show what is known without running
-      h += `<div class="tt"><span>Core stipend</span><b class="g">+${fmt(STIPEND * 60)}/min</b><span>Upkeep of your buildings</span><b class="r">−${fmt(upkeepNow(s))}/min</b><span>Exports, power, contracts</span><b>once time runs</b></div>`;
+      h += `<div class="tt"><span>Core stipend</span><b class="g">+${fmt(STIPEND * 60)}/min</b><span>Upkeep of your buildings</span><b class="r">−${fmt(upkeepNow(s))}/min</b><span>Exports, market, power</span><b>once time runs</b></div>`;
     }
     if (e.credits < 0) h += `<span class="r">In debt: you cannot build, and debt costs 3% per minute. Below ${cr(overdraftFloor(s))} the colony council steps in (this era's score drops).</span><br>`;
     return h + `<span class="dim">Click or press K for the ledger.</span>`;
