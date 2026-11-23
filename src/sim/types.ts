@@ -189,7 +189,7 @@ export interface Contract {
   t: number; // elapsed
   progress: number; // training: accumulated; inference: seconds held
   uptime: number; // inference 0..1 running
-  reward: { rp: number; items: Cost };
+  reward: { rp: number; items: Cost; credits?: number };
   state: 'offered' | 'active' | 'done' | 'failed';
   expires: number; // offer expiry seconds
 }

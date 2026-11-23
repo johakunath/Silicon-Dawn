@@ -2,7 +2,7 @@
 
 Full history of past findings and fixes: `archive/PLAYTEST_LOG_2026-11.md`.
 
-## Owner's first full play (after E1–E8)
+## Owner's first full play (after E1–E9)
 Play on Standard from a new campaign, with telemetry on. Note answers in a GitHub issue or tell the next session.
 1. Era 1: did you understand what to do next at every moment? Where did you wait with nothing to do?
 2. How long did Era 1 and Era 2 take (in-game clock)?

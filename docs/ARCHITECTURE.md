@@ -28,7 +28,8 @@
 - **Power grids** (`power.ts`) are rebuilt only when something changes (`gridDirty`). Nodes are poles, substations, generators, batteries and the Core, joined by union-find; wires form a spanning forest sorted by distance. A consumer attaches to the nearest node whose radius covers its footprint.
 - **Every status explains itself.** `Building.status` and `statusItem` feed `ui/status.ts`, which turns them into a title, a glyph and an explanation.
 - **Progression.** Each era has objectives (`data/eras.ts`) with progress functions. When an era's objectives are all done, it is scored (efficiency = pace + PUE, reliability = demand-weighted grid health, footprint = clean energy share), the frontier radius grows, and new content unlocks.
-- **Saves** (`save.ts`) use a versioned JSON schema. `migrate()` applies stepwise migrations (v1 → v2 is implemented and tested), and the loader rebuilds derived state.
+- **Economy** (`economy.ts`, numbers in `data/economy.ts`). `GameState.econ` holds the balance and cumulative income and cost lines. `econTick()` runs at the end of every step (power bought and sold at the Core, fuel, water, upkeep, interest, stipend); `econSecond()` runs once per second (exports above the keep level, emergency grant). Capex is charged in `actions.place()` and refunded in `demolish()`. `unitEcon()` and `liveByType()` feed the ledger and tooltips.
+- **Saves** (`save.ts`) use a versioned JSON schema. `migrate()` applies stepwise migrations (v1 → v2 → v3 are implemented and tested), and the loader rebuilds derived state.
 
 ## Rendering (`src/render`)
 
@@ -48,6 +49,7 @@
 
 ## UI and audio
 
+- The ledger (`ui/ledger.ts`, `ui/ledger.css`) renders the credits chip, the ledger modal (`K`) and the money rows in build tooltips; `hud.ts` only hooks it in.
 - The DOM HUD (`ui/hud.ts`) has heavy parts throttled to 4 Hz, and the badges follow buildings every frame. Badges are colour-blind safe: an octagon ✕ means severe, a triangle ▲ means a warning, plus a glyph.
 - Menu rows for graphics live in `ui/settings.ts`. Cloud save (`ui/cloudsave.ts`) treats the save as an opaque string from `Game.saveJson()`, gzips it and posts it as `text/plain` to the owner's Apps Script web app (`tools/apps-script/Code.gs`, which stores it in 40,000-character Sheet rows).
 - Audio (`audio/audio.ts`) is all procedural: sound effects come from oscillators and noise with envelopes and a convolver reverb. The ambient bed is layered (wind, pad, mains hum, fans, choir, crickets) and its gains follow building count, power, compute, night and era. A sequencer plays an era-specific scale and gets denser with compute.

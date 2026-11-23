@@ -7,6 +7,7 @@ import { DAY_LENGTH, GameState, dayBias, sunlight } from '../sim/state';
 import type { BuildingDef, ItemId } from '../sim/types';
 import { itemIcon } from './icons';
 import type { RateTracker } from './rates';
+import { econRows } from './ledger';
 
 export const ITEM_INFO: Record<ItemId, string> = {
   quartz: 'Raw crystal from Quartz Extractors. Useless until a Silicon Furnace refines it.',
@@ -131,9 +132,10 @@ export function defTip(s: GameState, d: BuildingDef): string {
   if (d.power < 0) io.push(`<span>Power</span><b class="r">−${-d.power}</b>`);
   if (d.power > 0) io.push(`<span>Power</span><b class="g">+${d.power}${d.gen === 'solar' ? ' (daylight)' : d.gen === 'wind' ? ' (varies)' : ''}</b>`);
   if (d.node) io.push(`<span>Grid reach</span><b>radius ${d.node.radius} · links ${d.node.reach}</b>`);
+  io.push(...econRows(s, d));
   if (d.deposit) io.push(`<span>Placement</span><b>on ${['', 'quartz', 'ore', 'rare-earth'][d.deposit]} deposit</b>`);
   if (d.needsWater) io.push(`<span>Placement</span><b>next to water</b>`);
   const ratios = ratioLines(s, d);
   const autolink = d.outputs || d.inputs ? `<span class="dim">Auto-link connects it to the nearest partner within belt range (${LINKS.conveyor.maxLength} tiles). You see the dashed preview before you click. Use the Link tool (L) to add or change connections.</span>` : '';
-  return `<b>${d.name}</b><br>${d.desc}<div class="tt">${io.join('')}</div>${ratios.length ? `<div class="ratio">${ratios.map((r) => `<div>${r}</div>`).join('')}</div>` : ''}${autolink}<br><span class="dim">Demolish refunds 100%. Move it any time with V.</span>`;
+  return `<b>${d.name}</b><br>${d.desc}<div class="tt">${io.join('')}</div>${ratios.length ? `<div class="ratio">${ratios.map((r) => `<div>${r}</div>`).join('')}</div>` : ''}${autolink}<br><span class="dim">Demolish refunds all materials, and all credits within 2 minutes (half after). Move it any time with V.</span>`;
 }

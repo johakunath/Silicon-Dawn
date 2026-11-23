@@ -3,6 +3,14 @@
 Newest first. Each entry says what a player notices. Technical detail lives in the commit history.
 
 ## Unreleased
+- Colony economy: buildings cost credits as well as materials, and every minute costs upkeep, power bought through the Core (cheap at noon, expensive at dusk), gas fuel and water. Credits come from exports of surplus metal, silicon and chips, contracts, power sold, a funding round at each new era and a small Core stipend. Deep debt triggers an emergency grant that lowers the era score, so you can never get stuck broke.
+- Ledger (`K`, or click the credits chip): income and costs per minute, balance trend, power price over the day, cost per 1,000 compute, utilisation, payback for every building type, and SELL/HOLD switches for exports.
+- Build tooltips show capex, running cost and payback (or cost per compute). New Codex chapter "Unit economics".
+- Tutorial: two new steps explain credits, selling and the ledger (15 steps now).
+- Demolishing refunds all credits for 2 minutes, then half (materials are still refunded in full).
+- Belts out of the stockpile now stop at a build reserve sized to the era, so a busy base can always afford its next building.
+- Saves move to version 3; older saves open with a balance sized to the era they reached.
+- Backlog: new epic E2 Tablet and quality profiles; later epics renumbered.
 - Tablet support: touch controls (drag, pinch, twist, tap, hold to inspect), a right-edge button rail and a red Cancel pill, finger-sized buttons, UI that fits an 11-inch screen.
 - Graphics profiles in the menu: Performance (cool tablet: lower resolution, 30 fps, slow redraw when paused, nothing in a hidden tab) and Quality (8× anti-aliasing, sharper shadows); Auto picks one per device. Frame rate limit setting.
 - Optional cloud save in your own Google Sheet: one save on desktop and tablet with a private sync code, auto upload that never overwrites a further-along game.

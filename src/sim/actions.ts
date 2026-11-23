@@ -5,10 +5,11 @@ import { ITEMS, LINKS } from './data/items';
 import { TECH } from './data/tech';
 import { GameState, addBuildingRaw, diffMul, hq, newBuilding, pushFeed, signal } from './state';
 import { linksChanged, recomputeFx } from './sim';
+import { capexOf, payCapex, refundCapex, refundOf } from './economy';
 import type { Building, BuildingDef, Cost, ItemId, Link, LinkKind } from './types';
 import { DEPOSIT, idx, inBounds, isWaterAdjacent } from './world';
 
-export interface PlaceCheck { ok: boolean; reason?: string; richness?: number; cost: Cost; platform?: number }
+export interface PlaceCheck { ok: boolean; reason?: string; richness?: number; cost: Cost; platform?: number; /** credits (capex) */ credits?: number }
 
 export function eraRadius(s: GameState): number {
   return s.mode === 'sandbox' ? 64 : ERAS[s.era - 1].radius;
@@ -87,14 +88,16 @@ export function checkPlace(s: GameState, type: string, x: number, y: number, mov
     richness = dep / (d.size * d.size);
   }
   if (d.needsWater && !isWaterAdjacent(w, x, y, d.size)) return { ok: false, reason: 'Must be next to water (shoreline)', cost };
-  if (!canAfford(s, cost)) return { ok: false, reason: `Need ${missingCost(s, cost)}`, cost, richness, platform };
-  return { ok: true, cost, richness, platform };
+  const credits = moving ? 0 : capexOf(s, type);
+  if (!canAfford(s, cost)) return { ok: false, reason: `Need ${missingCost(s, cost)}`, cost, richness, platform, credits };
+  if (credits > 0 && s.econ.credits < credits) return { ok: false, reason: `Need ${Math.ceil(credits - Math.max(0, s.econ.credits))} more credits`, cost, richness, platform, credits };
+  return { ok: true, cost, richness, platform, credits };
 }
 
 export function place(s: GameState, type: string, x: number, y: number, opts: { free?: boolean; autoLink?: boolean } = {}): Building | null {
   const c = checkPlace(s, type, x, y);
   if (!c.ok && !(opts.free && c.reason?.startsWith('Need'))) return null;
-  if (!opts.free) pay(s, c.cost);
+  if (!opts.free) { pay(s, c.cost); payCapex(s, c.credits ?? 0); }
   const b = newBuilding(s.nextId++, type, x, y, s.time);
   b.richness = c.richness ?? 1;
   addBuildingRaw(s, b);
@@ -107,9 +110,11 @@ export function demolish(s: GameState, id: number): boolean {
   const b = s.byId.get(id);
   if (!b || b.type === 'hq') return false;
   const d = BUILDING[b.type];
-  // full refund (Satisfactory-style): experimenting with layouts is never punished
+  // materials: full refund (Satisfactory-style), so experimenting with layouts is never punished.
+  // credits: full refund for a short while after building, then used hardware resells at a discount.
   const frac = 1;
   for (const [k, v] of Object.entries(costOf(s, d)) as [ItemId, number][]) s.stock[k] = (s.stock[k] ?? 0) + Math.floor(v * frac);
+  refundCapex(s, refundOf(s, b));
   for (const l of s.links.filter((l) => l.from === id || l.to === id)) removeLink(s, l.id, true);
   s.buildings.splice(s.buildings.indexOf(b), 1);
   s.byId.delete(id);

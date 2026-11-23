@@ -1,5 +1,5 @@
 // Deterministic fixed-timestep simulation. Pure: no DOM, no Math.random.
-import { BUILDING } from './data/buildings';
+import { BUILDING, BUILDINGS } from './data/buildings';
 import { ERAS, ERA_PAR, pue } from './data/eras';
 import { EVENT, EVENTS } from './data/events';
 import { TECH } from './data/tech';
@@ -9,10 +9,25 @@ import {
 } from './state';
 import type { Building, BuildingDef, Contract, ItemId, Link } from './types';
 import { LINKS } from './data/items';
+import { GRANT_SCORE_MUL } from './data/economy';
+import { contractCredits, earnContract, econSecond, econTick, fundEra } from './economy';
 
 export const ENGINE_TARGET = 160000;
 /** the stockpile never ships below this, so construction always has material */
 export const STORAGE_RESERVE = 40;
+export const STORAGE_RESERVE_MAX = 120;
+
+/**
+ * Build reserve per item: belts out of storage stop at enough material to build any one building of the current era
+ * (at least STORAGE_RESERVE, at most STORAGE_RESERVE_MAX). Without this a busy base could drain its stockpile below
+ * the cost of the next building and never afford it.
+ */
+export function storageReserve(s: GameState, item: ItemId): number {
+  const era = s.mode === 'sandbox' ? 5 : s.era;
+  let need = 0;
+  for (const d of BUILDINGS) if (d.era <= era) need = Math.max(need, d.cost[item] ?? 0);
+  return Math.min(STORAGE_RESERVE_MAX, Math.max(STORAGE_RESERVE, Math.ceil(need * diffMul(s).cost)));
+}
 
 // ───────── helpers ─────────
 export function inputCap(s: GameState, d: BuildingDef, item: ItemId): number {
@@ -120,7 +135,7 @@ export function step(s: GameState) {
   // ── pass A: wants & generation ──
   const G = s.grids;
   for (const g of G) { g.gen = 0; g.demand = 0; g.stored = 0; g.capacity = 0; }
-  const varGen = new Float32Array(G.length), firmCap = new Float32Array(G.length), gasCap = new Float32Array(G.length), cleanGen = new Float32Array(G.length);
+  const varGen = new Float32Array(G.length), firmCap = new Float32Array(G.length), gasCap = new Float32Array(G.length), cleanGen = new Float32Array(G.length), coreGen = new Float32Array(G.length);
   for (let i = 0; i < B.length; i++) {
     const b = B[i], d = BUILDING[b.type];
     let w = 0;
@@ -157,7 +172,7 @@ export function step(s: GameState) {
           out = d.power * Math.min(1.6, wind * local) * s.fx.windMul;
           varGen[b.grid] += out; cleanGen[b.grid] += out; break;
         }
-        case 'core': out = m.firmOff ? 0 : d.power; varGen[b.grid] += out; break;
+        case 'core': out = m.firmOff ? 0 : d.power; varGen[b.grid] += out; coreGen[b.grid] += out; break;
         case 'firm':
           if (b.type === 'gas') { if (!m.firmOff) { firmCap[b.grid] += d.power; gasCap[b.grid] += d.power; } }
           else { // fusion needs water
@@ -181,14 +196,15 @@ export function step(s: GameState) {
   }
 
   // ── grid balance ──
-  let healthNum = 0, healthDen = 0, totalGen = 0, totalClean = 0, gasUsed = 0;
+  let healthNum = 0, healthDen = 0, totalGen = 0, totalClean = 0, gasUsed = 0, imported = 0, exported = 0;
   for (const g of G) {
     const D = g.demand;
     const V = varGen[g.id];
-    let supplied = 0, firmUsed = 0, discharge = 0, charge = 0;
+    let supplied = 0, firmUsed = 0, discharge = 0, charge = 0, charge0 = 0;
     if (V >= D) {
       supplied = D;
       charge = V - D;
+      charge0 = charge;
     } else {
       const deficit = D - V;
       firmUsed = Math.min(firmCap[g.id], deficit);
@@ -221,6 +237,13 @@ export function step(s: GameState) {
         }
       }
     }
+    // the Core's generator is the colony grid tie: what it supplies to buildings or batteries is bought,
+    // and spilled surplus from your own generators is sold
+    if (coreGen[g.id] > 0) {
+      const used = D + (charge0 - charge); // demand plus energy stored this tick
+      imported += Math.max(0, Math.min(coreGen[g.id], used - (V - coreGen[g.id])));
+      exported += Math.max(0, charge - coreGen[g.id]);
+    }
     const gasShare = firmCap[g.id] > 0 ? gasCap[g.id] / firmCap[g.id] : 0;
     gasUsed += firmUsed * gasShare;
     g.gen = Math.min(V, D) + firmUsed;
@@ -234,6 +257,7 @@ export function step(s: GameState) {
 
   // ── pass B: production ──
   let computeProduced = 0, itPower = 0, facPower = 0, trainEff = 0, served = 0;
+  const water0 = s.stats.produced.water ?? 0;
   const shortage = m.chips;
   for (let i = 0; i < B.length; i++) {
     const b = B[i], d = BUILDING[b.type];
@@ -497,8 +521,8 @@ export function step(s: GameState) {
       const have = s.stock[l.item] ?? 0;
       const space = Math.max(0, inputCap(s, dd, l.item) - (dst.inBuf[l.item] ?? 0));
       const cap = linkCapacity(s, l) * TICK;
-      // keep a small reserve so the stockpile is never fully drained by belts
-      const mv = Math.max(0, Math.min(cap, space, have - STORAGE_RESERVE));
+      // keep a build reserve so the stockpile is never drained below the cost of a building
+      const mv = Math.max(0, Math.min(cap, space, have - storageReserve(s, l.item)));
       if (mv <= 1e-9) { l.state = space <= 1e-9 ? 'blocked' : 'idle'; continue; }
       s.stock[l.item] = have - mv;
       dst.inBuf[l.item] = (dst.inBuf[l.item] ?? 0) + mv;
@@ -533,12 +557,15 @@ export function step(s: GameState) {
     if (st.pueWindow.length > 60) st.pueWindow.shift();
   }
 
+  econTick(s, dt, { imported, exported, gas: gasUsed, water: (s.stats.produced.water ?? 0) - water0 });
+
   // ── trainer contracts get training ──
   for (const c of s.contracts) if (c.state === 'active' && c.kind === 'training') c.progress += trainEff;
 
   if (s.tick % 10 === 0) {
     tickEvents(s, 1);
     tickContracts(s, 1);
+    econSecond(s);
     checkObjectives(s);
   }
 }
@@ -613,6 +640,8 @@ function tickContracts(s: GameState, dt: number) {
     const c: Contract = kind === 'training'
       ? { id, kind, title: s.rng.pick(['Climate model fine-tune', 'Protein folding sweep', 'Translation model', 'Code assistant pretrain', 'Weather nowcasting']), target: Math.round((1500 + s.rng.range(0, 1500)) * scale / 100) * 100, duration: Math.round(300 * dm.contractTime), t: 0, progress: 0, uptime: 1, reward: { rp: 40 * s.era, items: { metal: 60 * s.era, chips: 10 * s.era } }, state: 'offered', expires: 90 }
       : { id, kind, title: s.rng.pick(['City transit assistant', 'Hospital triage helper', 'Search answers', 'Game NPC dialogue', 'Customer support bot']), target: Math.round((10 + s.rng.range(0, 15)) * scale), duration: Math.round(120 * dm.contractTime), t: 0, progress: 0, uptime: 1, reward: { rp: 35 * s.era, items: { metal: 50 * s.era, silicon: 40 * s.era } }, state: 'offered', expires: 90 };
+    // pay is fixed by the work, not by the deadline: a relaxed deadline does not pay more
+    c.reward.credits = contractCredits(c.kind, c.target, c.kind === 'inference' ? 120 : 0);
     s.contracts.push(c);
     signal(s, 'contract_offer');
     pushFeed(s, `New contract offered: ${c.title}`, 'info');
@@ -625,9 +654,11 @@ function finishContract(s: GameState, c: Contract, ok: boolean) {
   if (ok) {
     s.rp += c.reward.rp;
     for (const [k, v] of Object.entries(c.reward.items) as [ItemId, number][]) s.stock[k] = (s.stock[k] ?? 0) + v;
+    const credits = c.reward.credits ?? 0;
+    if (credits > 0) earnContract(s, credits);
     s.stats.contractsDone++;
     s.stats.eraContractsDone++;
-    pushFeed(s, `✓ Contract complete: ${c.title} (+${c.reward.rp} research)`, 'good');
+    pushFeed(s, `✓ Contract complete: ${c.title} (+${credits ? credits + ' credits, ' : ''}${c.reward.rp} research)`, 'good');
     signal(s, 'contract_done');
   } else {
     pushFeed(s, `✕ Contract failed: ${c.title}`, 'bad');
@@ -658,6 +689,7 @@ export function checkObjectives(s: GameState) {
       s.stats.eraContractsDone = 0;
       pushFeed(s, `ERA ${ERAS[s.era - 1].subtitle.split(' ')[1]}: ${ERAS[s.era - 1].name.toUpperCase()}`, 'era');
       signal(s, 'era', undefined, undefined, s.era);
+      fundEra(s, s.era);
       if (s.era === 3) s.nextContractAt = s.time + 40;
     } else if (!s.flags.campaignDone) {
       s.flags.campaignDone = true;
@@ -674,12 +706,14 @@ export function scoreEra(s: GameState) {
   const timeScore = Math.min(1, par / Math.max(1, time));
   const pueAvg = st.eraEnergyIT > 1 ? st.eraEnergyTotal / st.eraEnergyIT : 0;
   const pueScore = pueAvg > 0 ? Math.min(1, Math.max(0, (2.0 - pueAvg) / 0.85)) : timeScore;
-  const efficiency = s.era <= 1 ? timeScore : 0.5 * timeScore + 0.5 * pueScore;
+  // each emergency grant this era costs efficiency
+  const efficiency = (s.era <= 1 ? timeScore : 0.5 * timeScore + 0.5 * pueScore) * Math.pow(GRANT_SCORE_MUL, s.econ.eraGrants);
   const reliability = st.eraPoweredTime > 0 ? st.eraHealthyTime / st.eraPoweredTime : 1;
   const footprint = st.eraGen > 0 ? 0.25 + 0.75 * (st.eraCleanGen / st.eraGen) : 1;
   const avg = (efficiency + reliability + footprint) / 3;
   const grade = avg >= 0.9 ? 'S' : avg >= 0.78 ? 'A' : avg >= 0.62 ? 'B' : 'C';
   s.eraScores.push({ era: s.era, time, efficiency, reliability, footprint, grade });
+  s.econ.eraGrants = 0;
   st.eraEnergyIT = 0; st.eraEnergyTotal = 0; st.eraHealthyTime = 0; st.eraPoweredTime = 0; st.eraEmissions = 0; st.eraGen = 0; st.eraCleanGen = 0;
 }
 
