@@ -47,7 +47,7 @@ export const BUILDINGS: BuildingDef[] = [
   },
   {
     id: 'depot', name: 'Supply Depot', short: 'Drop-off & pickup for the stockpile', era: 1, cat: 'logistics', size: 2, hotkey: '8',
-    desc: 'An outpost of your stockpile. Belts can deliver refined goods into it, and you can link it out to any building that needs stockpiled materials (it always keeps 40 of each item in reserve for construction).',
+    desc: 'An outpost of your stockpile. Belts can deliver refined goods into it, and you can link it out to any building that needs stockpiled materials (belts out of it stop at a build reserve, so construction always has material).',
     cost: { metal: 16 }, power: 0, storage: SOLIDS,
   },
 

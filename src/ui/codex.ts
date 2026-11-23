@@ -53,7 +53,7 @@ export const CHAPTERS: Chapter[] = [
     html: () => `${ul([
       'Refined goods delivered into the <b>Core</b> or a <b>Supply Depot</b> join your stockpile, which pays for construction.',
       'Storage works <b>both ways</b>: link Core or Depot → Chip Fab to ship stockpiled metal and silicon to it.',
-      'Storage always keeps <b>40</b> of each item in reserve, so you can still build.',
+      'Belts out of storage stop at a <b>build reserve</b>: enough of each item to build any one building of this era (40 to 120), so you can always still build.',
       'You can also chain directly, for example <b>Ore Smelter → Chip Fab</b> (metal) or <b>Silicon Furnace → Chip Fab</b> (silicon). Short chains are efficient.',
     ])}`,
   },

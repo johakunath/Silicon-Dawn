@@ -56,4 +56,4 @@ Not in the top 10 but worth noting: free-form belt routing (high cost, little le
 ## 5. Recommendation (superseded 2026-11-23)
 The owner chose not to playtest until the game feels done. Plan: `BACKLOG.md`. Original text:
 
-Play the current game for 30–45 minutes first (`docs/PLAYTEST.md` checklist). It costs no tokens, and the economy design depends on how the existing pacing feels. Then build E2 (money) as the foundation, since ideas 2, 3, 6 and 7 all depend on it.
+Play the current game for 30–45 minutes first (`docs/PLAYTEST.md` checklist). It costs no tokens, and the economy design depends on how the existing pacing feels. Then build E1 (money) as the foundation, since ideas 2, 3, 6 and 7 all depend on it.

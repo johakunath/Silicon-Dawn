@@ -4,14 +4,16 @@ import { EVENT } from './data/events';
 import { TECH } from './data/tech';
 import { Rng } from './rng';
 import { linksChanged, recomputeFx } from './sim';
-import { GameState, addBuildingRaw, emptyStats } from './state';
+import { COST_LINES, GameState, INCOME_LINES, addBuildingRaw, emptyStats, newEcon } from './state';
+import type { Econ } from './state';
+import { EXPORTABLE } from './data/economy';
 import type { Building } from './types';
 import { generateWorld } from './world';
 
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
-export interface SaveV2 {
-  version: 2;
+export interface SaveV3 {
+  version: 3;
   seed: number;
   difficulty: GameState['difficulty'];
   mode: GameState['mode'];
@@ -26,6 +28,7 @@ export interface SaveV2 {
   nextLinkId: number;
   stock: GameState['stock'];
   rp: number;
+  econ: Econ;
   techs: string[];
   stats: GameState['stats'];
   rng: number;
@@ -61,9 +64,22 @@ const MIGRATIONS: Record<number, (d: any) => any> = {
     out.autoLink = d.autoLink ?? true;
     return out;
   },
+  // v3 adds the colony economy. Older saves open an account sized to the era they reached,
+  // so a late-game save is not stuck at the starting balance.
+  2: (d) => {
+    const out = { ...d, version: 3 };
+    const era = Number.isInteger(d.era) && d.era >= 1 && d.era <= 5 ? d.era : 1;
+    out.econ = newEcon(d.difficulty ?? 'standard', d.mode ?? 'campaign', d.mode === 'sandbox' ? undefined : migrationCredits(era));
+    return out;
+  },
 };
 
-export function migrate(data: any): SaveV2 {
+/** Starting balance for a save migrated from before the economy existed. */
+export function migrationCredits(era: number): number {
+  return 400 + 2000 * (era - 1);
+}
+
+export function migrate(data: any): SaveV3 {
   if (!data || typeof data !== 'object') throw new Error('Not a save file');
   let v = data.version ?? 1;
   let d = data;
@@ -74,13 +90,13 @@ export function migrate(data: any): SaveV2 {
     d = f(d);
     v = d.version;
   }
-  return d as SaveV2;
+  return d as SaveV3;
 }
 
-export function serialize(s: GameState): SaveV2 {
+export function serialize(s: GameState): SaveV3 {
   return {
-    version: 2, seed: s.seed, difficulty: s.difficulty, mode: s.mode, time: s.time, tick: s.tick, era: s.era, eraStart: s.eraStart,
-    done: s.done, buildings: s.buildings, nextId: s.nextId, links: s.links, nextLinkId: s.nextLinkId, stock: s.stock, rp: s.rp,
+    version: 3, seed: s.seed, difficulty: s.difficulty, mode: s.mode, time: s.time, tick: s.tick, era: s.era, eraStart: s.eraStart,
+    done: s.done, buildings: s.buildings, nextId: s.nextId, links: s.links, nextLinkId: s.nextLinkId, stock: s.stock, rp: s.rp, econ: s.econ,
     techs: s.techs, stats: s.stats, rng: s.rng.s, events: s.events, nextEventAt: s.nextEventAt, contracts: s.contracts,
     nextContractAt: s.nextContractAt, nextContractId: s.nextContractId, engine: s.engine, eraScores: s.eraScores, flags: s.flags,
     autoLink: s.autoLink, savedAt: new Date().toISOString(),
@@ -99,7 +115,7 @@ const plain = (v: unknown, max = 80) => String(v ?? '').slice(0, max).replace(/[
  * Reject saves that would load into a broken or unsafe state (hand-edited, truncated or crafted files).
  * Throws with a player-readable reason; also normalises a few fields in place (dedupe, unknown ids).
  */
-export function validateSave(d: SaveV2, worldSize: number) {
+export function validateSave(d: SaveV3, worldSize: number) {
   const bad = (why: string): never => { throw new Error(`Save file is damaged (${why})`); };
   if (!d || typeof d !== 'object' || Array.isArray(d)) bad('not an object');
   if (!fin(d.seed)) bad('seed');
@@ -123,11 +139,30 @@ export function validateSave(d: SaveV2, worldSize: number) {
   for (const l of d.links ?? []) if (!l || !fin(l.from) || !fin(l.to) || l.from === l.to) bad('link');
   for (const v of Object.values(d.stock ?? {})) if (!fin(v)) bad('stock');
   if (d.rp !== undefined && !fin(d.rp)) bad('research');
+  d.econ = cleanEcon(d.econ, d, bad);
   // normalise: unknown/duplicate techs and events are dropped, free text is escaped
   d.techs = [...new Set((d.techs ?? []).filter((t) => typeof t === 'string' && TECH[t]))];
   d.events = (d.events ?? []).filter((e) => e && EVENT[e.id] && fin(e.t) && fin(e.dur) && fin(e.warn));
   d.contracts = (d.contracts ?? []).filter((c) => c && typeof c === 'object').map((c) => ({ ...c, title: plain(c.title) }));
   d.eraScores = (d.eraScores ?? []).slice(0, 5);
+}
+
+/** Check the economy block and fill any missing totals; non-finite numbers mean a damaged save. */
+function cleanEcon(e: any, d: SaveV3, bad: (why: string) => never): Econ {
+  const base = newEcon(d.difficulty ?? 'standard', d.mode ?? 'campaign');
+  if (e === undefined) return base;
+  if (!e || typeof e !== 'object' || !fin(e.credits)) bad('credits');
+  const num = (v: unknown, def = 0) => { if (v === undefined) return def; if (!fin(v)) bad('ledger'); return v as number; };
+  const out: Econ = { ...base, credits: e.credits, capex: num(e.capex), grants: num(e.grants), eraGrants: num(e.eraGrants), minCredits: num(e.minCredits, e.credits) };
+  for (const k of INCOME_LINES) out.income[k] = num(e.income?.[k]);
+  for (const k of COST_LINES) out.costs[k] = num(e.costs?.[k]);
+  // a saved sell map is taken as is (missing = hold); only a save without one gets the defaults
+  if (e.sell && typeof e.sell === 'object') out.sell = {};
+  for (const k of EXPORTABLE) {
+    if (e.exported?.[k] !== undefined) out.exported[k] = num(e.exported[k]);
+    if (typeof e.sell?.[k] === 'boolean') out.sell[k] = e.sell[k];
+  }
+  return out;
 }
 
 export function loadFromObject(raw: unknown): GameState {
@@ -138,7 +173,7 @@ export function loadFromObject(raw: unknown): GameState {
     version: SAVE_VERSION, seed: d.seed, difficulty: d.difficulty ?? 'standard', mode: d.mode ?? 'campaign', time: d.time, tick: d.tick,
     era: d.era, eraStart: d.eraStart ?? 0, done: d.done ?? {}, world, occ: new Int32Array(world.size * world.size), buildings: [],
     byId: new Map(), nextId: d.nextId, links: (d.links ?? []).map((l) => ({ ...l })), nextLinkId: d.nextLinkId, stock: d.stock ?? {},
-    rp: d.rp ?? 0, techs: d.techs ?? [], fx: undefined as any, stats: { ...emptyStats(), ...(d.stats ?? {}) }, grids: [], gridEdges: [],
+    rp: d.rp ?? 0, econ: d.econ, techs: d.techs ?? [], fx: undefined as any, stats: { ...emptyStats(), ...(d.stats ?? {}) }, grids: [], gridEdges: [],
     gridDirty: true, rng: new Rng(1), events: d.events ?? [], nextEventAt: d.nextEventAt ?? 300, contracts: d.contracts ?? [],
     nextContractAt: d.nextContractAt ?? 60, nextContractId: d.nextContractId ?? 1,
     engine: d.engine ?? { progress: 0, accel: 0, ignited: false, igniteTime: 0 }, eraScores: d.eraScores ?? [],

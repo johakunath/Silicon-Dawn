@@ -2,6 +2,7 @@ import type { ActiveEvent, Building, Contract, Difficulty, ItemId, Link, TechEff
 import { World, generateWorld } from './world';
 import { Rng } from './rng';
 import { BUILDING } from './data/buildings';
+import { SANDBOX_CREDITS, SELL_DEFAULT, START_CREDITS } from './data/economy';
 
 export const TICK = 0.1; // seconds per sim step
 export const DAY_LENGTH = 240; // seconds per full day/night cycle
@@ -53,6 +54,38 @@ export interface Stats {
   pueWindow: number[]; // last 60s PUE samples
 }
 
+export type IncomeLine = 'exports' | 'power_sold' | 'contracts' | 'funding' | 'stipend' | 'grants';
+export type CostLine = 'power_bought' | 'fuel' | 'water' | 'upkeep' | 'interest';
+export const INCOME_LINES: IncomeLine[] = ['contracts', 'exports', 'power_sold', 'funding', 'stipend', 'grants'];
+export const COST_LINES: CostLine[] = ['fuel', 'upkeep', 'power_bought', 'water', 'interest'];
+
+/** Colony economy. Totals are cumulative credits since the start, so the UI can derive per-minute rates. */
+export interface Econ {
+  credits: number;
+  income: Record<IncomeLine, number>;
+  costs: Record<CostLine, number>;
+  /** construction spend, net of refunds */
+  capex: number;
+  /** export income per item */
+  exported: Partial<Record<ItemId, number>>;
+  /** export switches per item */
+  sell: Partial<Record<ItemId, boolean>>;
+  /** emergency grants: total and in the current era */
+  grants: number;
+  eraGrants: number;
+  minCredits: number;
+}
+
+export function newEcon(difficulty: Difficulty, mode: 'campaign' | 'sandbox', credits?: number): Econ {
+  const c = credits ?? (mode === 'sandbox' ? SANDBOX_CREDITS : START_CREDITS[difficulty]);
+  return {
+    credits: c,
+    income: { exports: 0, power_sold: 0, contracts: 0, funding: 0, stipend: 0, grants: 0 },
+    costs: { power_bought: 0, fuel: 0, water: 0, upkeep: 0, interest: 0 },
+    capex: 0, exported: {}, sell: { ...SELL_DEFAULT }, grants: 0, eraGrants: 0, minCredits: c,
+  };
+}
+
 export interface GameState {
   version: number;
   seed: number;
@@ -72,6 +105,7 @@ export interface GameState {
   nextLinkId: number;
   stock: Partial<Record<ItemId, number>>;
   rp: number;
+  econ: Econ;
   techs: string[];
   fx: TechEffects;
   stats: Stats;
@@ -121,9 +155,9 @@ export function newBuilding(id: number, type: string, x: number, y: number, t: n
 export function createState(seed: number, difficulty: Difficulty = 'standard', mode: 'campaign' | 'sandbox' = 'campaign'): GameState {
   const world = generateWorld(seed);
   const s: GameState = {
-    version: 2, seed, difficulty, mode, time: 0, tick: 0, era: mode === 'sandbox' ? 5 : 1, eraStart: 0, done: {},
+    version: 3, seed, difficulty, mode, time: 0, tick: 0, era: mode === 'sandbox' ? 5 : 1, eraStart: 0, done: {},
     world, occ: new Int32Array(world.size * world.size), buildings: [], byId: new Map(), nextId: 1, links: [], nextLinkId: 1,
-    stock: { ...START_STOCK }, rp: 0, techs: [], fx: { ...BASE_FX }, stats: emptyStats(), grids: [], gridEdges: [], gridDirty: true,
+    stock: { ...START_STOCK }, rp: 0, econ: newEcon(difficulty, mode), techs: [], fx: { ...BASE_FX }, stats: emptyStats(), grids: [], gridEdges: [], gridDirty: true,
     rng: new Rng(seed ^ 0x5eed), events: [], nextEventAt: 300, contracts: [], nextContractAt: 60, nextContractId: 1,
     engine: { progress: 0, accel: 0, ignited: false, igniteTime: 0 }, eraScores: [],
     flags: { campaignDone: false, sandboxUnlocked: false, tutorial: true }, feed: [], signals: [], pendingEra: 0, autoLink: true,

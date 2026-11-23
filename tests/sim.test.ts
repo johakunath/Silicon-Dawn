@@ -114,6 +114,7 @@ describe('logistics flow', () => {
   it('moves items along a conveyor and respects capacity', () => {
     const s = createState(SEED);
     s.stock = { metal: 999, silicon: 999 };
+    s.econ.sell = {}; // no exports: this test measures belt deliveries into the stockpile
     const h = hq(s);
     const [x, y] = findSpot(s, 'smelter', h.x + 5, h.y);
     const sm = place(s, 'smelter', x, y)!;

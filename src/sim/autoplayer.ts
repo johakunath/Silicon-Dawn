@@ -4,6 +4,7 @@ import { TECHS } from './data/tech';
 import { acceptContract, removeLink, addLink, checkLink, checkPlace, costOf, canAfford, place, research, canResearch } from './actions';
 import { coveredAt, rebuildGrids } from './power';
 import { step } from './sim';
+import { keepLevel } from './economy';
 import { GameState, TICK, countType, hq } from './state';
 import type { Building, ItemId } from './types';
 import { DEPOSIT, idx } from './world';
@@ -15,6 +16,10 @@ export interface AutoplayReport {
   buildings: number;
   problems: string[];
   log: string[];
+  /** balance at each era change, lowest balance and emergency grants (pacing check) */
+  credits: number[];
+  minCredits: number;
+  grants: number;
 }
 
 function spiral(cx: number, cy: number, maxR: number, f: (x: number, y: number) => boolean): [number, number] | null {
@@ -107,6 +112,13 @@ export class AutoPlayer {
         if (it === 'coolant' || it === 'water') this.feedFrom(b, it);
       }
     }
+    // exports: chip fabs and accelerator fabs eat silicon from the stockpile, so stop selling it from Era III.
+    // Metal and chips keep selling: the keep level already covers the Dawn Engine's bill of materials.
+    // A big silicon pile is idle capital, so sell it down again.
+    if (s.era >= 3) s.econ.sell.silicon = (s.stock.silicon ?? 0) > 3 * keepLevel(s, 'silicon');
+    // accelerators are worth a lot, but pods and the Dawn Engine need a bank: sell them only when cash runs short
+    if (s.era === 4) s.econ.sell.accel = s.econ.credits < 1500 && (s.stock.accel ?? 0) > 80;
+    if (s.era >= 5) s.econ.sell.accel = false;
     // research cheapest available tech
     const avail = TECHS.filter((t) => canResearch(s, t.id).ok).sort((a, b) => a.cost - b.cost);
     if (avail.length) research(s, avail[0].id);
@@ -145,7 +157,7 @@ export class AutoPlayer {
         if (r && !s.links.some((l) => l.to === r.id)) { const c = checkLink(s, e.id, r.id); if (c.ok) addLink(s, e.id, r.id); }
       }
     };
-    chain(DEPOSIT.QUARTZ, 'quarry', 'furnace', s.era >= 2 ? 4 : 2);
+    chain(DEPOSIT.QUARTZ, 'quarry', 'furnace', s.era >= 4 ? 6 : s.era >= 2 ? 4 : 2);
     chain(DEPOSIT.ORE, 'drill', 'smelter', s.era >= 2 ? 5 : 3);
     if (s.era === 1 && n('depot') < 1 && (s.stock.metal ?? 0) > 60) this.build('depot', cx + 6, cy + 2, 10);
 
@@ -251,6 +263,7 @@ export class AutoPlayer {
     const s = this.s;
     for (const [k, v] of Object.entries(s.stock)) if (!Number.isFinite(v) || v! < -1e-6) return `stock ${k}=${v}`;
     if (!Number.isFinite(s.rp) || s.rp < -1e-6) return `rp=${s.rp}`;
+    if (!Number.isFinite(s.econ.credits)) return `credits=${s.econ.credits}`;
     for (const b of s.buildings) {
       for (const [k, v] of Object.entries(b.inBuf)) if (!Number.isFinite(v) || v! < -1e-6) return `${b.type}#${b.id} in ${k}=${v}`;
       for (const [k, v] of Object.entries(b.outBuf)) if (!Number.isFinite(v) || v! < -1e-6) return `${b.type}#${b.id} out ${k}=${v}`;
@@ -265,13 +278,14 @@ export class AutoPlayer {
 export function autoplay(s: GameState, targetEra: number, maxSeconds: number): AutoplayReport {
   const ap = new AutoPlayer(s);
   const eraTimes: number[] = [];
+  const credits: number[] = [];
   let lastEra = s.era;
   let lastProgressT = 0, lastDelivered = 0;
   const steps = Math.round(maxSeconds / TICK);
   for (let i = 0; i < steps; i++) {
     if (i % 20 === 0) ap.think();
     step(s);
-    if (s.era !== lastEra) { eraTimes.push(Math.round(s.time)); lastEra = s.era; ap.log.push(`== era ${s.era} at ${Math.round(s.time)}s`); }
+    if (s.era !== lastEra) { eraTimes.push(Math.round(s.time)); credits.push(Math.round(s.econ.credits)); lastEra = s.era; ap.log.push(`== era ${s.era} at ${Math.round(s.time)}s`); }
     if (i % 100 === 0) {
       const bad = ap.checkSanity();
       if (bad) { ap.problems.push(`t=${Math.round(s.time)} ${bad}`); break; }
@@ -281,5 +295,5 @@ export function autoplay(s: GameState, targetEra: number, maxSeconds: number): A
     }
     if (s.era > targetEra || (targetEra >= 5 && s.flags.campaignDone)) break;
   }
-  return { eraReached: s.era, time: s.time, eraTimes, buildings: s.buildings.length, problems: ap.problems, log: ap.log };
+  return { eraReached: s.era, time: s.time, eraTimes, buildings: s.buildings.length, problems: ap.problems, log: ap.log, credits, minCredits: Math.round(s.econ.minCredits), grants: s.econ.grants };
 }
