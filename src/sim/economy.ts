@@ -221,6 +221,27 @@ export interface TypeLive {
   compute: number;
 }
 
+/**
+ * Share of nameplate rate a building actually made last tick, with the same multipliers as sim.step():
+ * deposit richness, tech, Robot Hub boost and event slowdowns for recipes; power, throttle, tech and pod mode for compute.
+ */
+export function flowFactor(s: GameState, b: Building, d: BuildingDef): number {
+  if (b.broken > 0 || b.activity <= 0) return 0;
+  const boost = b.boost || 1;
+  if (d.it) {
+    const tol = s.fx.heatTolerance;
+    const throttle = b.heat > 1 + tol ? Math.max(0.45, 1 - (b.heat - 1 - tol)) : 1;
+    return b.powerSat * boost * throttle * s.fx.computeMul * (b.mode === 'training' ? 1.25 : 1);
+  }
+  const sev = diffMul(s).eventSeverity * (1 - Math.min(0.8, s.fx.eventResist));
+  let mul = 1;
+  if (d.cat === 'extract') mul *= s.fx.extractMul * b.richness;
+  if (d.cat === 'refine') mul *= s.fx.refineMul;
+  if (b.type === 'pump' && eventActive(s, 'drought')) mul *= 1 - 0.6 * sev;
+  if ((b.type === 'fab' || b.type === 'accfab') && eventActive(s, 'shortage')) mul *= 1 - 0.5 * sev;
+  return Math.min(1, b.activity) * boost * mul;
+}
+
 /** Live unit economics per building type, from the current state (average power price). */
 export function liveByType(s: GameState): TypeLive[] {
   const by = new Map<string, Building[]>();
@@ -241,11 +262,12 @@ export function liveByType(s: GameState): TypeLive[] {
       if (type === 'gas') opex += d.power * a * FUEL_PRICE * 60;
       if (d.outputs?.water) opex += d.outputs.water * a * WATER_PRICE * 60;
       if (d.power > 0 && d.gen && d.gen !== 'core') value += Math.max(0, -b.pw) * POWER_PRICE * 60;
+      const f = flowFactor(s, b, d);
       for (const [it, r] of Object.entries(d.outputs ?? {}) as [ItemId, number][]) {
-        if (it === 'compute') { if (d.it) compute += r * a * 60 * s.fx.computeMul; }
-        else value += r * a * (PRICE[it] ?? 0) * 60;
+        if (it === 'compute') { if (d.it) compute += r * f * 60; }
+        else value += r * f * (PRICE[it] ?? 0) * 60;
       }
-      for (const [it, r] of Object.entries(d.inputs ?? {}) as [ItemId, number][]) value -= r * a * (PRICE[it] ?? 0) * 60;
+      if (!d.it) for (const [it, r] of Object.entries(d.inputs ?? {}) as [ItemId, number][]) value -= r * f * (PRICE[it] ?? 0) * 60;
     }
     const capex = capexOf(s, type);
     const net = (value - opex) / bs.length;

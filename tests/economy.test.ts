@@ -241,6 +241,21 @@ describe('unit economics', () => {
     expect(unitEcon(s, BUILDING.battery).payback).toBeNull();
     expect(unitEcon(s, BUILDING.rack).compute).toBe(180);
   });
+  it('live value counts deposit coverage, like real production', () => {
+    const s = colony();
+    const h = hq(s);
+    const [x, y] = findSpot(s, 'smelter', h.x + 5, h.y);
+    const sm = place(s, 'smelter', x, y, { autoLink: false })!;
+    sm.inBuf.ore = 100;
+    run(s, 2);
+    const full = liveByType(s).find((r) => r.type === 'smelter')!.value;
+    sm.boost = 1; sm.richness = 0.25; // refiners ignore richness, extractors use it
+    const q = s.buildings.find((b) => b.type === 'smelter')!;
+    expect(liveByType(s).find((r) => r.type === 'smelter')!.value).toBeCloseTo(full, 6);
+    q.type = 'drill'; // same activity, now an extractor on a quarter-covered deposit
+    const drill = liveByType(s).find((r) => r.type === 'drill')!;
+    expect(drill.value).toBeCloseTo(0.6 * 0.25 * q.activity * 0.4 * 60, 3);
+  });
   it('live economics per type follow the real buildings', () => {
     const s = colony();
     const h = hq(s);
