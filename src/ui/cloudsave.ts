@@ -136,8 +136,8 @@ export class CloudSave {
   }
 
   /** ifSavedAt: replace only if the cloud still holds this save ('' = only if empty); omit to overwrite */
-  async upload(keepalive = false, ifSavedAt?: string): Promise<CloudInfo> {
-    const json = this.g.saveJson();
+  /** json: the exact snapshot that passed a guard (auto upload); default = the game right now */
+  async upload(keepalive = false, ifSavedAt?: string, json = this.g.saveJson()): Promise<CloudInfo> {
     const meta = summarize(json, this.device());
     const { enc, data } = await encodeSave(json);
     if (keepalive && data.length > KEEPALIVE_LIMIT) throw new Error('too large for a background upload');
@@ -169,7 +169,8 @@ export class CloudSave {
       const cloud = leaving ? this.last : await this.info();
       if (!autoUploadAllowed(local, cloud)) { this.lastAuto = Date.now(); return; }
       // the server re-checks atomically that the cloud still holds what we saw (another device may have uploaded since)
-      await this.upload(leaving, cloud?.found ? cloud.savedAt ?? '' : '');
+      // upload the same snapshot the guard checked: the player may load or start another game while info() is pending
+      await this.upload(leaving, cloud?.found ? cloud.savedAt ?? '' : '', json);
       this.lastError = '';
     } catch (e) {
       this.lastError = (e as Error).message;
