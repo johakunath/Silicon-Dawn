@@ -33,10 +33,9 @@ The live web app is built into the game (`DEFAULT_CLOUD_URL` in `src/ui/cloudsav
 ## 5. Connect each device
 1. Open the game: https://johakunath.github.io/Silicon-Dawn/
 2. Start or continue a game, then click **☰ (Menu) → SAVE / LOAD**.
-3. Under **☁ Cloud save**, the **Script URL** is already filled in.
-4. First device: keep the **Sync code** the game shows and write it down. Second device: replace the code with the one from your first device.
-5. Click **CONNECT**. You see "Cloud save connected".
-6. On the first device click **UPLOAD NOW**. On the second device click **LOAD FROM CLOUD**.
+3. First device: keep the **Sync code** the game shows and write it down. Second device: replace the code with the one from your first device.
+4. Click **CONNECT**. You see "Cloud save connected".
+5. On the first device click **UPLOAD NOW**. On the second device click **LOAD FROM CLOUD**.
 
 Auto upload is on by default: every 5 minutes of play and when you switch away from the game. It never overwrites a game that is further along or a different game; for that, use UPLOAD NOW (the game asks first).
 

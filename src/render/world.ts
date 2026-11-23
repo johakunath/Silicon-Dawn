@@ -88,6 +88,7 @@ export class WorldView {
     this.rig.scene.add(this.prev, this.finale.group, this.buildings.group, this.links.group, this.particles.points, this.foot, this.selRing, this.hoverRing, this.rangeRing);
     this.foot.visible = false; this.selRing.visible = false; this.hoverRing.visible = false; this.rangeRing.visible = false;
     this.foot.renderOrder = 3; this.selRing.renderOrder = 4; this.hoverRing.renderOrder = 4; this.rangeRing.renderOrder = 4;
+    for (const m of [this.selRing, this.hoverRing]) { (m.material as THREE.MeshBasicMaterial).depthTest = false; m.renderOrder = 9; }
     this.buildWorld();
   }
 
@@ -224,14 +225,32 @@ export class WorldView {
     } else this.rangeRing.visible = false;
   }
 
-  private ring(mesh: THREE.Mesh, b: Building | null, pad = 0.35) {
+  /** flat square frame around a building's footprint: outer half-size `half`, line width `w` (cached per size) */
+  private frames = new Map<string, THREE.BufferGeometry>();
+  private frameGeo(half: number, w: number) {
+    const key = `${half}|${w}`;
+    let g = this.frames.get(key);
+    if (!g) {
+      const sh = new THREE.Shape([new THREE.Vector2(-half, -half), new THREE.Vector2(half, -half), new THREE.Vector2(half, half), new THREE.Vector2(-half, half)]);
+      const i = half - w;
+      sh.holes.push(new THREE.Path([new THREE.Vector2(-i, -i), new THREE.Vector2(-i, i), new THREE.Vector2(i, i), new THREE.Vector2(i, -i)]));
+      g = new THREE.ShapeGeometry(sh).rotateX(-Math.PI / 2);
+      this.frames.set(key, g);
+    }
+    return g;
+  }
+
+  /** selection / hover marker: a rectangle that hugs the footprint (pad = gap outside it, in tiles) */
+  private ring(mesh: THREE.Mesh, b: Building | null, pad = 0.18, w = 0.13) {
     if (!b) { mesh.visible = false; return; }
     const d = BUILDING[b.type];
     const h = baseHeight(this.s.world, b.x, b.y, d.size);
     mesh.visible = true;
-    const r = d.size * 0.72 + pad;
-    mesh.scale.set(r, 1, r);
-    mesh.position.set(b.x + d.size / 2, h + 0.06, b.y + d.size / 2);
+    mesh.geometry = this.frameGeo(d.size / 2 + pad, w);
+    mesh.scale.set(1, 1, 1);
+    // just above the 0.12-high foundations (models.ts); drawn without depth test (see constructor) so raised
+    // bases and neighbouring buildings in a dense base never hide it
+    mesh.position.set(b.x + d.size / 2, h + 0.17, b.y + d.size / 2);
   }
 
   /** recompute overlay texture */
@@ -403,7 +422,7 @@ export class WorldView {
     this.links.update(now, dt, rig.glowLevel, rig.night, this.syncLevel);
     // selection/hover rings
     this.ring(this.selRing, this.selected && s.byId.has(this.selected.id) ? this.selected : null);
-    this.ring(this.hoverRing, this.hovered && this.hovered !== this.selected && !this.placingType ? this.hovered : null, 0.2);
+    this.ring(this.hoverRing, this.hovered && this.hovered !== this.selected && !this.placingType ? this.hovered : null, 0.1, 0.08);
     (this.selRing.material as THREE.MeshBasicMaterial).opacity = 0.65 + 0.3 * Math.sin(now * 4);
     // emitters
     this.emitT += dt;
