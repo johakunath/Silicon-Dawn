@@ -222,6 +222,27 @@ describe('grid connection and power deals', () => {
   });
 });
 
+describe('peak curtailment and exports', () => {
+  it('curtailment stops imports, not exports: own surplus still sells at the peak', () => {
+    const sold = (dr: boolean) => {
+      const s = colony(4);
+      const h = hq(s);
+      const [x, y] = findSpot(s, 'wind', h.x + 4, h.y, 6);
+      place(s, 'wind', x, y);
+      rebuildGrids(s);
+      setDr(s, dr);
+      s.time = (0.77 - 0.3) * 240;
+      const p0 = s.econ.income.power_sold;
+      for (let i = 0; i < 20; i++) step(s);
+      expect(drInForce(s)).toBe(dr);
+      return s.econ.income.power_sold - p0;
+    };
+    const without = sold(false), withDr = sold(true);
+    expect(without).toBeGreaterThan(0);
+    expect(withDr).toBeGreaterThan(0);
+  });
+});
+
 describe('hardware tiers and depreciation', () => {
   it('pods built after Next-Gen Accelerators are tier 2 and make more compute; older pods stay tier 1', () => {
     const s = colony(4);

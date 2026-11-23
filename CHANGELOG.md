@@ -8,6 +8,8 @@ Newest first. Each entry says what a player notices. Technical detail lives in t
 - Batteries show their charge as a glowing level on the cells (green, amber, red; pulsing while charging) instead of a floating gauge.
 - Ledger: the per-building table is compact, grouped by role with subtotals, sortable, with bars, use dots, a coloured net column, a 3-minute trend line and payback pills. Gateways now show their share of market revenue.
 - Fix: a broken battery no longer keeps charging and discharging.
+- Fix: during peak curtailment your own surplus power still sells (only imports stop).
+- Fix: switching difficulty in the score sheet while it loads no longer shows the previous difficulty's list.
 - Operations: machines wear as they work (hot racks faster) and break down more and more often near the end of their life. Select one to see its wear and breakdown risk; `R` overhauls it for 10 metal.
 - New Service Center (Era II): maintains everything within 11 tiles so covered machines stay fresh, for an upkeep every minute. Robot Hubs now service their radius too. New Service overlay (`U`) shows coverage and worn machines outside it.
 - Power deals in the ledger: a bigger grid connection for the Core (arrives after a 3-minute wait), a fixed-price power contract, and paid peak curtailment at dusk.
