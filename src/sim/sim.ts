@@ -219,20 +219,21 @@ export function step(s: GameState) {
       let canDis = 0;
       for (const id of g.nodes) {
         const b = s.byId.get(id)!; const d = BUILDING[b.type];
-        if (d.battery) canDis += Math.min(b.charge / dt, d.battery.rate * s.fx.batteryMul);
+        if (d.battery && b.broken <= 0) canDis += Math.min(b.charge / dt, d.battery.rate * s.fx.batteryMul);
       }
       discharge = Math.min(rem, canDis);
       supplied = V + firmUsed + discharge;
     }
     g.sat = D > 0 ? Math.min(1, supplied / D) : 1;
     let batRate = 0;
-    for (const id of g.nodes) { const nb = s.byId.get(id)!; const nd = BUILDING[nb.type]; if (nd.battery && nb.charge > 1) batRate += nd.battery.rate * s.fx.batteryMul; }
+    for (const id of g.nodes) { const nb = s.byId.get(id)!; const nd = BUILDING[nb.type]; if (nd.battery && nb.broken <= 0 && nb.charge > 1) batRate += nd.battery.rate * s.fx.batteryMul; }
     g.avail = V + firmCap[g.id] + batRate;
     // apply battery flows proportionally
     if (charge > 0 || discharge > 0) {
       for (const id of g.nodes) {
         const b = s.byId.get(id)!; const d = BUILDING[b.type];
-        if (!d.battery) continue;
+        // a broken battery neither charges nor discharges until it is repaired
+        if (!d.battery || b.broken > 0) continue;
         const cap = d.battery.capacity * s.fx.batteryMul, rate = d.battery.rate * s.fx.batteryMul;
         if (charge > 0) {
           const c = Math.min(rate, charge, (cap - b.charge) / dt);

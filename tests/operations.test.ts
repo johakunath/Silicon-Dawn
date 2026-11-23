@@ -100,6 +100,25 @@ describe('wear and breakdowns', () => {
     expect(b.status).toBe('worn');
   });
 
+  it('a broken battery stops storing and supplying until it is repaired', () => {
+    const s = colony(1);
+    const h = hq(s);
+    const [x, y] = findSpot(s, 'battery', h.x + 3, h.y, 4);
+    const bat = place(s, 'battery', x, y)!;
+    const [lx, ly] = findSpot(s, 'furnace', h.x - 3, h.y, 4);
+    place(s, 'furnace', lx, ly);
+    rebuildGrids(s);
+    bat.charge = 500;
+    s.stock = {};
+    bat.broken = 30;
+    step(s);
+    expect(bat.charge).toBe(500);
+    // once repaired, the same tick moves energy again (here the Core's surplus charges it)
+    bat.broken = 0;
+    step(s);
+    expect(bat.charge).not.toBe(500);
+  });
+
   it('hot IT equipment wears twice as fast', () => {
     const s = colony();
     const a = raw(s, 'rack', 8, 0), b = raw(s, 'rack', 10, 0);
