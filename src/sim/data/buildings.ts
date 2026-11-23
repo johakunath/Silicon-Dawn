@@ -83,6 +83,11 @@ export const BUILDINGS: BuildingDef[] = [
     desc: 'Runs experiments on compute delivered by data cable. It produces research points for the tech tree.',
     cost: { metal: 24, silicon: 16, chips: 6 }, power: -4, inputs: { compute: 6 }, workload: 'research',
   },
+  {
+    id: 'service', name: 'Service Center', short: 'Maintains everything within 11 tiles', era: 2, cat: 'special', size: 2,
+    desc: 'Maintenance crews keep machines in range from wearing out: wear grows 4× slower and is worked off, and breakdowns are fixed 3× faster. It costs upkeep every minute. Press U to see coverage.',
+    cost: { metal: 30, silicon: 12, chips: 4 }, power: -3, service: 11,
+  },
 
   // ───────── Era 3 · Datacenter ─────────
   {
@@ -153,8 +158,8 @@ export const BUILDINGS: BuildingDef[] = [
     cost: { metal: 50, chips: 20 }, power: -6, inputs: { chips: 0.1, metal: 0.3 }, outputs: { robots: 0.08 },
   },
   {
-    id: 'hub', name: 'Robot Hub', short: '+30% speed & auto-repair nearby', era: 4, tech: 'robots', cat: 'special', size: 2,
-    desc: 'Robots service everything within 8 tiles. Buildings run 30% faster and recover from breakdowns at once.',
+    id: 'hub', name: 'Robot Hub', short: '+30% speed, service & instant repair nearby', era: 4, tech: 'robots', cat: 'special', size: 2,
+    desc: 'The upgrade of the Service Center: robots maintain everything within 8 tiles like a Service Center does, make it run 30% faster, and fix breakdowns at once.',
     cost: { metal: 40, chips: 10 }, power: -3, inputs: { robots: 0.02 }, hub: 8,
   },
   {

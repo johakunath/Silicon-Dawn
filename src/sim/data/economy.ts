@@ -28,6 +28,7 @@ export const ECON: Record<string, BuildingEcon> = {
   rack: { capex: 60, upkeep: 1 },
   cooler: { capex: 80, upkeep: 1.5 },
   lab: { capex: 150, upkeep: 3 },
+  service: { capex: 250, upkeep: 6 },
   // Era 3
   substation: { capex: 120, upkeep: 1 },
   gridbat: { capex: 300, upkeep: 3 },

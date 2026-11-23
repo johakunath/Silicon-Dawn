@@ -280,7 +280,7 @@ describe('save v4', () => {
     v3.version = 3;
     delete v3.market;
     delete v3.econ.income.market;
-    expect(migrate(v3).version).toBe(4);
+    expect(migrate(v3).version).toBe(5);
     const t = loadFromObject(v3);
     expect(t.market.open).toBe(false);
     expect(t.econ.income.market).toBe(0);

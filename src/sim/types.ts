@@ -48,6 +48,8 @@ export interface BuildingDef {
   workload?: 'research' | 'training' | 'inference' | 'engine';
   /** automation hub radius */
   hub?: number;
+  /** maintenance coverage radius (Service Center; Robot Hubs also service their hub radius) */
+  service?: number;
   emissions?: number; // footprint score penalty / s at full output
   unique?: boolean;
   /** belt/pipe junction: merges and splits any solid or fluid */
@@ -89,11 +91,17 @@ export interface Building {
   boost: number; // hub boost multiplier last tick
   /** power flow last tick: + draw, − generation */
   pw: number;
+  /** 0..1 wear; breakdowns get likely near 1 */
+  wear: number;
+  /** hardware generation (pods built after Next-Gen Accelerators are 2) */
+  tier: number;
+  /** inside service coverage last second (derived, not saved meaningfully) */
+  serviced: boolean;
 }
 
 export type Status =
   | 'ok' | 'idle' | 'no_power' | 'low_power' | 'no_input' | 'output_full'
-  | 'overheat' | 'broken' | 'no_output_link' | 'charging' | 'discharging' | 'night' | 'calm';
+  | 'overheat' | 'broken' | 'worn' | 'no_output_link' | 'charging' | 'discharging' | 'night' | 'calm';
 
 export interface Link {
   id: number;
@@ -160,6 +168,8 @@ export interface TechEffects {
   robots: number;
   bufferMul: number;
   heatTolerance: number;
+  /** 1 = pods built from now on are the next generation */
+  podTier: number;
 }
 
 export interface EventDef {

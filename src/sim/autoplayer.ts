@@ -5,6 +5,7 @@ import { acceptContract, removeLink, addLink, checkLink, checkPlace, costOf, can
 import { coveredAt, rebuildGrids } from './power';
 import { step } from './sim';
 import { keepLevel } from './economy';
+import { canUpgradeGrid, gridUpgradeCost, requestGridUpgrade } from './operations';
 import { GameState, TICK, countType, hq } from './state';
 import type { Building, ItemId } from './types';
 import { DEPOSIT, idx } from './world';
@@ -138,6 +139,13 @@ export class AutoPlayer {
     }
     if (n('battery') < Math.min(6, 1 + Math.floor(n('solar') / 2))) this.build('battery', cx - 3, cy + 4, 14);
 
+    // ── maintenance: a Service Center wherever machines wear out without one ──
+    if (s.era >= 2 && n('service') < 2 * s.era - 2) {
+      const worn = s.buildings.filter((b) => !b.serviced && b.wear > 0.35 && b.type !== 'service').sort((a, b) => b.wear - a.wear)[0];
+      if (worn) this.build('service', worn.x + 1, worn.y + 1, 8);
+    }
+    // ── a bigger grid connection when cash allows (cheap night power for the base) ──
+    if (s.era >= 3 && canUpgradeGrid(s).ok && s.econ.credits > 4 * gridUpgradeCost(s) && s.ops.gridLevel < s.era) requestGridUpgrade(s);
     // ── era 1 chains ──
     const chain = (dep: number, ext: string, ref: string, count: number) => {
       if (n(ref) >= count && n(ext) >= count) return;

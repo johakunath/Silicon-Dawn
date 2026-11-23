@@ -28,7 +28,7 @@ export function coinIcon(size = 18): string {
 }
 
 const INCOME_NAME: Record<IncomeLine, string> = {
-  market: 'Colony market', contracts: 'Special orders', exports: 'Exports', power_sold: 'Power sold', funding: 'Funding rounds', stipend: 'Core stipend', grants: 'Emergency grants',
+  market: 'Colony market', contracts: 'Special orders', exports: 'Exports', power_sold: 'Power sold', curtailment: 'Peak curtailment', funding: 'Funding rounds', stipend: 'Core stipend', grants: 'Emergency grants',
 };
 const COST_NAME: Record<CostLine, string> = {
   fuel: 'Gas fuel', upkeep: 'Upkeep', power_bought: 'Power bought', water: 'Water', interest: 'Debt interest',

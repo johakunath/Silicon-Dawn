@@ -6,17 +6,18 @@ import { Rng } from './rng';
 import { linksChanged, recomputeFx } from './sim';
 import { COST_LINES, GameState, INCOME_LINES, addBuildingRaw, emptyStats, newEcon } from './state';
 import type { Econ } from './state';
-import { SEGMENT_IDS, emptySegment, newMarket } from './state';
+import { SEGMENT_IDS, emptySegment, newMarket, newOps } from './state';
+import type { Ops } from './state';
 import { MODEL_SIZES } from './data/market';
 import type { Market, Model } from './types';
 import { EXPORTABLE } from './data/economy';
 import type { Building } from './types';
 import { generateWorld } from './world';
 
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
-export interface SaveV4 {
-  version: 4;
+export interface SaveV5 {
+  version: 5;
   seed: number;
   difficulty: GameState['difficulty'];
   mode: GameState['mode'];
@@ -33,6 +34,7 @@ export interface SaveV4 {
   rp: number;
   econ: Econ;
   market: Market;
+  ops: Ops;
   techs: string[];
   stats: GameState['stats'];
   rng: number;
@@ -79,6 +81,8 @@ const MIGRATIONS: Record<number, (d: any) => any> = {
   // v4 adds the colony market. It starts closed; a save in Era III or later opens it on the next second,
   // with the open baseline model deployed and a Dawn-1 run started.
   3: (d) => ({ ...d, version: 4, market: newMarket() }),
+  // v5 adds operations: wear on every building (new, so 0) and the grid connection and power deals.
+  4: (d) => ({ ...d, version: 5, ops: newOps(), buildings: (d.buildings ?? []).map((b: any) => (b && typeof b === 'object' ? { ...b, wear: 0, tier: 1 } : b)) }),
 };
 
 /** Starting balance for a save migrated from before the economy existed. */
@@ -86,7 +90,7 @@ export function migrationCredits(era: number): number {
   return 400 + 2000 * (era - 1);
 }
 
-export function migrate(data: any): SaveV4 {
+export function migrate(data: any): SaveV5 {
   if (!data || typeof data !== 'object') throw new Error('Not a save file');
   let v = data.version ?? 1;
   let d = data;
@@ -97,13 +101,13 @@ export function migrate(data: any): SaveV4 {
     d = f(d);
     v = d.version;
   }
-  return d as SaveV4;
+  return d as SaveV5;
 }
 
-export function serialize(s: GameState): SaveV4 {
+export function serialize(s: GameState): SaveV5 {
   return {
-    version: 4, seed: s.seed, difficulty: s.difficulty, mode: s.mode, time: s.time, tick: s.tick, era: s.era, eraStart: s.eraStart,
-    done: s.done, buildings: s.buildings, nextId: s.nextId, links: s.links, nextLinkId: s.nextLinkId, stock: s.stock, rp: s.rp, econ: s.econ, market: s.market,
+    version: 5, seed: s.seed, difficulty: s.difficulty, mode: s.mode, time: s.time, tick: s.tick, era: s.era, eraStart: s.eraStart,
+    done: s.done, buildings: s.buildings, nextId: s.nextId, links: s.links, nextLinkId: s.nextLinkId, stock: s.stock, rp: s.rp, econ: s.econ, market: s.market, ops: s.ops,
     techs: s.techs, stats: s.stats, rng: s.rng.s, events: s.events, nextEventAt: s.nextEventAt, contracts: s.contracts,
     nextContractAt: s.nextContractAt, nextContractId: s.nextContractId, engine: s.engine, eraScores: s.eraScores, flags: s.flags,
     autoLink: s.autoLink, savedAt: new Date().toISOString(),
@@ -122,7 +126,7 @@ const plain = (v: unknown, max = 80) => String(v ?? '').slice(0, max).replace(/[
  * Reject saves that would load into a broken or unsafe state (hand-edited, truncated or crafted files).
  * Throws with a player-readable reason; also normalises a few fields in place (dedupe, unknown ids).
  */
-export function validateSave(d: SaveV4, worldSize: number) {
+export function validateSave(d: SaveV5, worldSize: number) {
   const bad = (why: string): never => { throw new Error(`Save file is damaged (${why})`); };
   if (!d || typeof d !== 'object' || Array.isArray(d)) bad('not an object');
   if (!fin(d.seed)) bad('seed');
@@ -139,6 +143,8 @@ export function validateSave(d: SaveV4, worldSize: number) {
     if (!Number.isInteger(b.x) || !Number.isInteger(b.y) || b.x < 0 || b.y < 0 || b.x + def.size > worldSize || b.y + def.size > worldSize) bad('building position');
     if (!b.inBuf || typeof b.inBuf !== 'object' || !b.outBuf || typeof b.outBuf !== 'object') bad('building buffers');
     for (const v of [...Object.values(b.inBuf), ...Object.values(b.outBuf)]) if (!fin(v)) bad('building buffers');
+    if (b.wear !== undefined && (!fin(b.wear) || b.wear < 0 || b.wear > 1)) bad('building wear');
+    if (b.tier !== undefined && b.tier !== 1 && b.tier !== 2) bad('building tier');
     ids.add(b.id);
     if (b.type === 'hq') hqs++;
   }
@@ -148,6 +154,7 @@ export function validateSave(d: SaveV4, worldSize: number) {
   if (d.rp !== undefined && !fin(d.rp)) bad('research');
   d.econ = cleanEcon(d.econ, d, bad);
   d.market = cleanMarket(d.market, bad);
+  d.ops = cleanOps(d.ops, bad);
   // normalise: unknown/duplicate techs and events are dropped, free text is escaped
   d.techs = [...new Set((d.techs ?? []).filter((t) => typeof t === 'string' && TECH[t]))];
   d.events = (d.events ?? []).filter((e) => e && EVENT[e.id] && fin(e.t) && fin(e.dur) && fin(e.warn));
@@ -156,7 +163,7 @@ export function validateSave(d: SaveV4, worldSize: number) {
 }
 
 /** Check the economy block and fill any missing totals; non-finite numbers mean a damaged save. */
-function cleanEcon(e: any, d: SaveV4, bad: (why: string) => never): Econ {
+function cleanEcon(e: any, d: SaveV5, bad: (why: string) => never): Econ {
   const base = newEcon(d.difficulty ?? 'standard', d.mode ?? 'campaign');
   if (e === undefined) return base;
   if (!e || typeof e !== 'object' || !fin(e.credits)) bad('credits');
@@ -170,6 +177,23 @@ function cleanEcon(e: any, d: SaveV4, bad: (why: string) => never): Econ {
     if (e.exported?.[k] !== undefined) out.exported[k] = num(e.exported[k]);
     if (typeof e.sell?.[k] === 'boolean') out.sell[k] = e.sell[k];
   }
+  return out;
+}
+
+/** Check the operations block; missing parts get defaults. */
+function cleanOps(o: any, bad: (why: string) => never): Ops {
+  const out = newOps();
+  if (o === undefined) return out;
+  if (!o || typeof o !== 'object') bad('operations');
+  const num = (v: unknown, def: number) => { if (v === undefined) return def; if (!fin(v)) bad('operations'); return v as number; };
+  out.gridLevel = num(o.gridLevel, 0);
+  if (!Number.isInteger(out.gridLevel) || out.gridLevel < 0 || out.gridLevel > 50) bad('operations');
+  out.gridReadyAt = num(o.gridReadyAt, 0);
+  out.fixedUntil = num(o.fixedUntil, 0);
+  out.dr = o.dr === true;
+  out.breakdowns = num(o.breakdowns, 0);
+  out.newsAt = num(o.newsAt, 0);
+  out.newsPending = num(o.newsPending, 0);
   return out;
 }
 
@@ -223,7 +247,7 @@ export function loadFromObject(raw: unknown): GameState {
     version: SAVE_VERSION, seed: d.seed, difficulty: d.difficulty ?? 'standard', mode: d.mode ?? 'campaign', time: d.time, tick: d.tick,
     era: d.era, eraStart: d.eraStart ?? 0, done: d.done ?? {}, world, occ: new Int32Array(world.size * world.size), buildings: [],
     byId: new Map(), nextId: d.nextId, links: (d.links ?? []).map((l) => ({ ...l })), nextLinkId: d.nextLinkId, stock: d.stock ?? {},
-    rp: d.rp ?? 0, econ: d.econ, market: d.market, techs: d.techs ?? [], fx: undefined as any, stats: { ...emptyStats(), ...(d.stats ?? {}) }, grids: [], gridEdges: [],
+    rp: d.rp ?? 0, econ: d.econ, market: d.market, ops: d.ops, techs: d.techs ?? [], fx: undefined as any, stats: { ...emptyStats(), ...(d.stats ?? {}) }, grids: [], gridEdges: [],
     gridDirty: true, rng: new Rng(1), events: d.events ?? [], nextEventAt: d.nextEventAt ?? 300, contracts: d.contracts ?? [],
     nextContractAt: d.nextContractAt ?? 60, nextContractId: d.nextContractId ?? 1,
     engine: d.engine ?? { progress: 0, accel: 0, ignited: false, igniteTime: 0 }, eraScores: d.eraScores ?? [],
@@ -232,7 +256,7 @@ export function loadFromObject(raw: unknown): GameState {
   };
   s.rng.s = d.rng >>> 0 || 1;
   for (const b of d.buildings) {
-    addBuildingRaw(s, { ...({ rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, pw: 0 } as Partial<Building>), ...b } as Building);
+    addBuildingRaw(s, { ...({ rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, pw: 0, wear: 0, tier: 1, serviced: false } as Partial<Building>), ...b } as Building);
   }
   s.links = s.links.filter((l) => s.byId.has(l.from) && s.byId.has(l.to));
   recomputeFx(s);
