@@ -50,6 +50,7 @@ export class TouchControls {
     if (e.pointerType === 'mouse') return;
     e.preventDefault();
     if (e.pointerType === 'touch') this.g.setTouchMode(true);
+    else this.g.setTouchUi(true); // S Pen: keep hover tooltips, show the touch rail
     try { canvas.setPointerCapture(e.pointerId); } catch { /* synthetic events */ }
     this.g.hud.hideTip();
     this.pts.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY });

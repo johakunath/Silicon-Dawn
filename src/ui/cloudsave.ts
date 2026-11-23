@@ -18,6 +18,8 @@ export interface CloudMeta { era: number; min: number; time: number; seed: numbe
 const RUN_KEY = 'sd_cloud_autosave_run_v1';
 /** which cloud run the autosave in local storage belongs to (sig = fingerprint of that exact autosave) */
 export interface AutosaveTag { runId: string; sig: string }
+/** where one cloud operation goes: captured once, so a settings change mid-operation cannot redirect it */
+export interface CloudTarget { url: string; code: string }
 export interface CloudInfo { found: boolean; savedAt?: string; meta?: Partial<CloudMeta> }
 
 /** 12 random symbols as XXXX-XXXX-XXXX (60 bits). */
@@ -133,12 +135,15 @@ export class CloudSave {
   save() { try { localStorage.setItem(KEY, JSON.stringify(this.cfg)); } catch { /* ignore */ } }
   device() { return document.body.classList.contains('touch') ? 'Tablet' : 'Desktop'; }
 
-  private async call(body: Record<string, unknown>, keepalive = false): Promise<any> {
+  target(): CloudTarget { return { url: this.cfg.url.trim(), code: this.cfg.code }; }
+  private sameTarget(t: CloudTarget) { const n = this.target(); return n.url === t.url && n.code === t.code; }
+
+  private async call(body: Record<string, unknown>, keepalive = false, t: CloudTarget = this.target()): Promise<any> {
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 25000);
     try {
       // text/plain keeps this a "simple" request: no CORS preflight, which Apps Script cannot answer
-      const res = await fetch(this.cfg.url.trim(), { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ v: 1, code: this.cfg.code, slot: 'main', ...body }), redirect: 'follow', signal: ctl.signal, keepalive });
+      const res = await fetch(t.url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ v: 1, code: t.code, slot: 'main', ...body }), redirect: 'follow', signal: ctl.signal, keepalive });
       if (!res.ok) throw new Error(`server answered ${res.status}`);
       const out = await res.json();
       if (!out.ok) throw new Error(out.error ?? 'server error');
@@ -149,28 +154,30 @@ export class CloudSave {
     } finally { clearTimeout(timer); }
   }
 
-  async ping() { return this.call({ op: 'ping' }); }
+  async ping(t = this.target()) { return this.call({ op: 'ping' }, false, t); }
 
-  async info(): Promise<CloudInfo> {
-    const r = await this.call({ op: 'info' });
-    this.last = { found: !!r.found, savedAt: r.savedAt, meta: r.meta };
-    return this.last;
+  async info(t = this.target()): Promise<CloudInfo> {
+    const r = await this.call({ op: 'info' }, false, t);
+    const i: CloudInfo = { found: !!r.found, savedAt: r.savedAt, meta: r.meta };
+    if (this.sameTarget(t)) this.last = i;
+    return i;
   }
 
   /** ifSavedAt: replace only if the cloud still holds this save ('' = only if empty); omit to overwrite */
   /** json: the exact snapshot that passed a guard (auto upload); default = the game right now */
   /** state + runId: the game the snapshot came from and the run it belongs to (default: this game's run, or a new one) */
-  async upload(keepalive = false, ifSavedAt?: string, json = this.g.saveJson(), state: object = this.g.s, runId?: string): Promise<CloudInfo> {
+  async upload(keepalive = false, ifSavedAt?: string, json = this.g.saveJson(), state: object = this.g.s, runId?: string, t = this.target()): Promise<CloudInfo> {
     const meta: CloudMeta = { ...summarize(json, this.device()) };
     meta.runId = runId ?? this.runFor(state, meta) ?? newRunId();
     const { enc, data } = await encodeSave(json);
     if (keepalive && data.length > KEEPALIVE_LIMIT) throw new Error('too large for a background upload');
-    const r = await this.call({ op: 'save', enc, data, meta, ...(ifSavedAt !== undefined ? { ifSavedAt } : {}) }, keepalive);
-    this.last = { found: true, savedAt: r.savedAt, meta };
+    const r = await this.call({ op: 'save', enc, data, meta, ...(ifSavedAt !== undefined ? { ifSavedAt } : {}) }, keepalive, t);
+    const i: CloudInfo = { found: true, savedAt: r.savedAt, meta };
+    if (this.sameTarget(t)) this.last = i;
     this.lastAuto = Date.now();
     this.lastSig = saveSig(json);
     this.bind(state, meta);
-    return this.last;
+    return i;
   }
 
   private runs = new WeakMap<object, string>();
@@ -195,17 +202,18 @@ export class CloudSave {
   }
 
   /** the cloud save as a JSON string (does not load it) */
-  async download(): Promise<{ json: string; info: CloudInfo }> {
-    const r = await this.call({ op: 'load' });
+  async download(t = this.target()): Promise<{ json: string; info: CloudInfo }> {
+    const r = await this.call({ op: 'load' }, false, t);
     if (!r.found) throw new Error('no cloud save for this sync code yet');
     const json = await decodeSave(r.enc, r.data);
-    this.last = { found: true, savedAt: r.savedAt, meta: r.meta };
-    return { json, info: this.last };
+    const i: CloudInfo = { found: true, savedAt: r.savedAt, meta: r.meta };
+    if (this.sameTarget(t)) this.last = i;
+    return { json, info: i };
   }
 
   private async autoUpload(leaving: boolean) {
     if (!this.cfg.auto || !this.ready() || this.busy || !this.g.started) return;
-    const json = this.g.saveJson(), state = this.g.s;
+    const json = this.g.saveJson(), state = this.g.s, t = this.target();
     if (saveSig(json) === this.lastSig) return; // nothing changed since the last upload
     this.busy = true;
     try {
@@ -213,11 +221,11 @@ export class CloudSave {
       local.runId = this.runFor(state, local);
       // when leaving there is no time for a check round-trip; rely on the last known cloud state
       if (leaving && !this.last) return;
-      const cloud = leaving ? this.last : await this.info();
+      const cloud = leaving ? this.last : await this.info(t);
       if (!autoUploadAllowed(local, cloud)) { this.lastAuto = Date.now(); return; }
       // the server re-checks atomically that the cloud still holds what we saw (another device may have uploaded since)
       // upload the same snapshot the guard checked: the player may load or start another game while info() is pending
-      await this.upload(leaving, cloud?.found ? cloud.savedAt ?? '' : '', json, state, local.runId ?? newRunId());
+      await this.upload(leaving, cloud?.found ? cloud.savedAt ?? '' : '', json, state, local.runId ?? newRunId(), t);
       this.lastError = '';
     } catch (e) {
       this.lastError = (e as Error).message;
@@ -265,26 +273,32 @@ export function bindCloud(root: HTMLElement, g: Game, c: CloudSave, reopen: (set
     const msg = q('#cl-msg')!;
     if (!validUrl(url)) { msg.textContent = 'The URL must start with https://script.google.com/'; return; }
     if (!code) { msg.textContent = 'A sync code has 12 letters and digits, like K7QP-M2XD-9FRA.'; return; }
+    if (c.busy) { msg.textContent = 'A cloud transfer is still running. Try again in a moment.'; return; }
+    c.busy = true;
     c.cfg.url = url; c.cfg.code = code; c.last = null;
     msg.textContent = 'Connecting…';
     void (async () => {
-      try { await c.ping(); c.save(); await c.info(); toast('Cloud save connected', 'good'); reopen(false); }
+      try { await c.ping(); c.save(); await c.info(); toast('Cloud save connected', 'good'); c.busy = false; reopen(false); }
       catch (e) { msg.textContent = 'Could not connect: ' + (e as Error).message; }
+      finally { c.busy = false; }
     })();
   });
   q('#cl-cancel')?.addEventListener('click', () => reopen(false));
-  q('#cl-setup')?.addEventListener('click', () => reopen(true));
-  q('#cl-auto')?.addEventListener('click', () => { c.cfg.auto = !c.cfg.auto; c.save(); reopen(false); });
+  // settings stay fixed while a transfer runs (each transfer also captured its destination at the start)
+  const wait = () => { if (c.busy) toast('Cloud: wait for the current transfer to finish', 'warn'); return c.busy; };
+  q('#cl-setup')?.addEventListener('click', () => { if (!wait()) reopen(true); });
+  q('#cl-auto')?.addEventListener('click', () => { if (wait()) return; c.cfg.auto = !c.cfg.auto; c.save(); reopen(false); });
   q('#cl-up')?.addEventListener('click', () => void run('Uploading…', async () => {
     if (!g.started) throw new Error('start or load a game first');
-    const cloud = await c.info();
+    const t = c.target();
+    const cloud = await c.info(t);
     const json = g.saveJson(), state = g.s;
     const local = summarize(json, c.device());
     local.runId = c.runFor(state, local);
     const same = autoUploadAllowed(local, cloud);
     if (!same && !confirm(`The cloud holds a different or further-along game (${describeCloud(cloud).replace(/&#\d+;/g, '')}). Replace it with this one?`)) return;
     // replacing a different campaign starts a new run id, so the other device's game is never treated as a continuation
-    await c.upload(false, undefined, json, state, same ? local.runId ?? newRunId() : newRunId());
+    await c.upload(false, undefined, json, state, same ? local.runId ?? newRunId() : newRunId(), t);
     toast('Uploaded to the cloud', 'good');
   }).then(() => reopen(false)));
   q('#cl-down')?.addEventListener('click', () => {

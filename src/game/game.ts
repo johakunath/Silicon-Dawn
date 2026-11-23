@@ -286,7 +286,7 @@ export class Game {
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.zoomAt(e.clientX, e.clientY, e.deltaY > 0 ? 1.12 : 1 / 1.12); }, { passive: false });
     canvas.addEventListener('pointerdown', (e) => {
       if (e.pointerType !== 'mouse') return; // touch and pen: see touch.ts
-      this.setTouchMode(false);
+      this.setTouchMode(false); this.setTouchUi(false);
       canvas.focus();
       this.mouse.down = true; this.mouse.button = e.button; this.mouse.dragX = e.clientX; this.mouse.dragY = e.clientY; this.mouse.moved = false;
       this.mouse.lastPaint = '';
@@ -297,7 +297,9 @@ export class Game {
     canvas.addEventListener('pointermove', (e) => {
       if (e.pointerType === 'touch') return;
       if (e.pointerType === 'pen' && e.buttons) return; // pen drags pan (touch.ts); pen hover still moves the cursor
+      // pen hover gives a cursor and tooltips like a mouse, but keeps the touch rail (no keyboard on a tablet)
       if (e.pointerType === 'mouse' || e.pointerType === 'pen') this.setTouchMode(false);
+      if (e.pointerType === 'mouse') this.setTouchUi(false);
       const dx = e.clientX - this.mouse.x, dy = e.clientY - this.mouse.y;
       this.mouse.x = e.clientX; this.mouse.y = e.clientY;
       if (this.mouse.down && ((e.buttons & 3) === 3 || (e.altKey && (e.buttons & 2)))) {
@@ -392,11 +394,14 @@ export class Game {
   /** pipette: build more of the selected or hovered building */
   pipette() { const b = this.view.hovered ?? this.view.selected; if (b && b.type !== 'hq') { this.setTool({ kind: 'build', type: b.type }); audio.play('click'); } }
   setTouchMode(on: boolean) {
+    if (on) this.setTouchUi(true);
     if (on === this.touchMode) return;
     this.touchMode = on;
-    document.body.classList.toggle('touch', on);
     if (on) { this.view.hovered = null; this.view.buildings.hoverId = -1; this.hud.hideTip(); }
   }
+  /** touch rail, Cancel pill and finger-sized buttons (body.touch): on for finger and pen, off for a mouse */
+  setTouchUi(on: boolean) { document.body.classList.toggle('touch', on); }
+
   /** a finger tap: acts like a left click at that spot and leaves the ghost there */
   tap(px: number, py: number) { this.mouse.x = px; this.mouse.y = py; this.onPrimary(px, py, false); }
   /** move the virtual cursor (ghost and link preview follow it) without clicking */
