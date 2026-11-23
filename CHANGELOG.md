@@ -3,6 +3,7 @@
 Newest first. Each entry says what a player notices. Technical detail lives in the commit history.
 
 ## Unreleased
+- Cloud save is live: the game knows the save server, so a sync code is all you need on each device.
 - Telemetry (opt-in): before your first game the game asks whether to share anonymous run summaries (era times, money, stalls, breakdowns) with a random player id. Change it any time in the Menu; the last 5 run logs stay on your device and export as JSON.
 - Friends score sheet: the final screen shows your campaign score and lets you submit it under a name you type; Menu → Score sheet shows the top 20 per difficulty. Needs the updated cloud script (version 2).
 - Batteries show their charge as a glowing level on the cells (green, amber, red; pulsing while charging) instead of a floating gauge.

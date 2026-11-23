@@ -27,13 +27,13 @@ You do this once. It takes about 10 minutes. Without it the game works as before
 6. Copy the **Web app URL** (it ends in `/exec`). Click **Done**.
 7. Optional check: paste the URL into a new browser tab. You should see "Silicon Dawn cloud save is running".
 
-## 4. Send the URL to Claude
-Paste the Web app URL into the next Claude session (or a GitHub issue) and say "build in the cloud save URL". Claude puts it into the game (`DEFAULT_CLOUD_URL` in `src/ui/cloudsave.ts`), so you and your friends never paste it, only a sync code. Until then, paste it yourself as in step 5.
+## 4. URL in the game (done 2026-11-23)
+The live web app is built into the game (`DEFAULT_CLOUD_URL` in `src/ui/cloudsave.ts`), so you and your friends only enter a sync code. If you ever make a **new** deployment (not a new version of the same one), its URL changes: send it to Claude to update that line.
 
 ## 5. Connect each device
 1. Open the game: https://johakunath.github.io/Silicon-Dawn/
 2. Start or continue a game, then click **☰ (Menu) → SAVE / LOAD**.
-3. Under **☁ Cloud save**, the **Script URL** is already filled in once step 4 is done; otherwise paste the Web app URL there.
+3. Under **☁ Cloud save**, the **Script URL** is already filled in.
 4. First device: keep the **Sync code** the game shows and write it down. Second device: replace the code with the one from your first device.
 5. Click **CONNECT**. You see "Cloud save connected".
 6. On the first device click **UPLOAD NOW**. On the second device click **LOAD FROM CLOUD**.

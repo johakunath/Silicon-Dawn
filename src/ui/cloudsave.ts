@@ -13,7 +13,7 @@ const KEY = 'sd_cloud_v1';
  * The owner's deployed web app (tools/apps-script/README.md). Set here once it exists, so players only
  * enter their sync code (Ruinenstadt-Berlin does the same). Empty = each player pastes a URL in Save / Load.
  */
-export const DEFAULT_CLOUD_URL = '';
+export const DEFAULT_CLOUD_URL = 'https://script.google.com/macros/s/AKfycbxP6r9k63kU8oqLJczSMfI87QyXGAUyE4xBO5Lrc6ZiiMaq9LJa8j3hdZKBHMGCsnpR/exec';
 const AUTO_EVERY_MS = 5 * 60 * 1000;
 const KEEPALIVE_LIMIT = 60000; // browsers cap keepalive request bodies at 64 KB
 
