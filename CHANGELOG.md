@@ -4,7 +4,8 @@ Newest first. Each entry says what a player notices. Technical detail lives in t
 
 ## Unreleased
 - Docs: new `CLAUDE.md` (agent guide), `BACKLOG.md` (epics and work packages), this changelog, `docs/RESEARCH.md`. Old `ROADMAP.md` and `HANDOFF.md` folded into these; original brief and full playtest log moved to `docs/archive/`.
-- Deploy workflow now runs on the `main` branch (renamed from `master`).
+- Docs: `docs/DESIGN.md` (v2 direction: colony economy, market, operations, events, scenarios, telemetry) and `docs/IDEAS.md` (parked ideas).
+- Deploy workflow runs on `main` (and on `master` until the rename).
 
 ## 1.0.0 (2026-11-21): first public build
 Play at https://johakunath.github.io/Silicon-Dawn/

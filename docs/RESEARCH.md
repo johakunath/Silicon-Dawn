@@ -45,7 +45,7 @@ Ranking weighs fun and depth, the owner's learning goal, replayability, and cost
 | 3 | **AI market**: demand segments (chat, code, enterprise, video) with growing demand, price, latency and uptime needs, reputation | Answers "who uses all this AI"; endless pressure like Mini Metro | L |
 | 4 | **Decision events**: events become choices with trade-offs (interruptible power discount, export controls, price war, HBM shortage) | Tension and agency; teaches industry shocks | M |
 | 5 | **Scenario regions**: Desert Solar (no water), Nordic Hydro (cheap power, far fiber), Grid-Locked Metro (connection queue), Island (imports) | Replayability through different rules | M per scenario |
-| 6 | **Hardware generations and depreciation** | Teaches why GPUs lose value; upgrade vs. sweat the asset | M |
+| 6 | **Hardware generations and depreciation** (refined: maintenance and Service Center coverage, light tiers, no forced swaps; see `DESIGN.md`) | Teaches upkeep and why GPUs lose value without tedium | M |
 | 7 | **Power procurement**: grid connection with wait time, PPAs, demand response, time-of-day price | Power is the real 2026 constraint | M |
 | 8 | **Run modifiers and daily seed**: pick 1 of 3 cards at each era (subsidy, carbon tax, cheap capital) | Each run plays differently | S–M |
 | 9 | **Score sheet with friends**: per-scenario scores (profit, PUE, footprint, time) in a shared Google Sheet via Apps Script | Sharing with friends; light competition | S |
@@ -53,5 +53,7 @@ Ranking weighs fun and depth, the owner's learning goal, replayability, and cost
 
 Not in the top 10 but worth noting: free-form belt routing (high cost, little learning value), building rotation, alt-mode recipe icons.
 
-## 5. Recommendation
+## 5. Recommendation (superseded 2026-11-23)
+The owner chose not to playtest until the game feels done. Plan: `BACKLOG.md`. Original text:
+
 Play the current game for 30–45 minutes first (`docs/PLAYTEST.md` checklist). It costs no tokens, and the economy design depends on how the existing pacing feels. Then build E2 (money) as the foundation, since ideas 2, 3, 6 and 7 all depend on it.
