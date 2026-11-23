@@ -10,7 +10,8 @@ export function explain(s: GameState, b: Building): StatusInfo {
   const d = BUILDING[b.type];
   const item = b.statusItem ? ITEMS[b.statusItem].name.toLowerCase() : 'input';
   switch (b.status) {
-    case 'broken': return { level: 'bad', glyph: '✕', title: 'Broken down', text: b.broken > 0 ? `Repairs in ${Math.ceil(b.broken)}s. Repair now for 10 metal, or put it in range of a Robot Hub.` : 'Offline due to a grid fault.' };
+    case 'broken': return { level: 'bad', glyph: '✕', title: 'Broken down', text: b.broken > 0 ? `Repairs in ${Math.ceil(b.broken)}s. Repair now for 10 metal (R), or put it in range of a Service Center or Robot Hub.` : 'Offline due to a grid fault.' };
+    case 'worn': return { level: 'warn', glyph: '🔧', title: `Worn out (${Math.round(b.wear * 100)}%)`, text: 'Running, but a breakdown is likely soon. Put it in range of a Service Center (U shows coverage), or overhaul it now for 10 metal (R).' };
     case 'no_power': return { level: 'bad', glyph: '⚡', title: 'No power', text: 'Not connected to any grid. Place a Power Pole or Substation within range.' };
     case 'low_power': {
       const g = s.grids[b.grid];
@@ -37,7 +38,7 @@ export function badgeFor(b: Building): 'bad' | 'warn' | null {
   switch (b.status) {
     case 'broken': case 'no_power': return 'bad';
     case 'low_power': return b.powerSat < 0.5 ? 'bad' : null; // mild brownouts are shown grid-wide in the top bar
-    case 'no_input': case 'output_full': case 'no_output_link': case 'overheat': return 'warn';
+    case 'no_input': case 'output_full': case 'no_output_link': case 'overheat': case 'worn': return 'warn';
     default: return null;
   }
 }

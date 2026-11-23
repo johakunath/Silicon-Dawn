@@ -28,7 +28,7 @@ export const ERAS: EraDef[] = [
   {
     id: 2, name: 'Silicon', subtitle: 'Era II', radius: 25,
     intro: 'Sand becomes thought. Pump water, fab chips, and light your first racks, then learn how hot compute runs.',
-    guide: ['chips', 'compute', 'heat', 'research'],
+    guide: ['chips', 'compute', 'heat', 'research', 'maintenance'],
     objectives: [
       { id: 'e2_fab', text: 'Build a Water Pump and a Chip Fab', progress: (s) => (has(s, 'pump') + has(s, 'fab')) / 2, hint: 'Pumps must sit on a shore tile next to water.' },
       { id: 'e2_chips', text: 'Deliver 50 chips', progress: (s) => frac(del(s, 'chips'), 50), hint: 'Fabs need silicon, metal AND water. Watch their inputs.' },

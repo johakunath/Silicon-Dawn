@@ -5,7 +5,8 @@
  input ──►  │ actions.ts ──► GameState ◄── sim.step() @ 10 Hz fixed tick  │
  (game/)    │   place/link/research      power.ts  flow  heat  workloads  │
             │                            events  contracts  objectives    │
-            │ market.ts  demand, serving, models   data/*.ts (content)    │
+            │ market.ts  demand, serving, models   operations.ts  wear     │
+            │ data/*.ts  (content)                                        │
             └───────┬───────────────────────────────┬─────────────────────┘
                     │ reads state                   │ state.signals[] (build, era, ignite…)
             ┌───────▼────────┐               ┌──────▼──────────┐
@@ -30,7 +31,8 @@
 - **Progression.** Each era has objectives (`data/eras.ts`) with progress functions. When an era's objectives are all done, it is scored (efficiency = pace + PUE, reliability = demand-weighted grid health, footprint = clean energy share), the frontier radius grows, and new content unlocks.
 - **Economy** (`economy.ts`, numbers in `data/economy.ts`). `GameState.econ` holds the balance and cumulative income and cost lines. `econTick()` runs at the end of every step (power bought and sold at the Core, fuel, water, upkeep, interest, stipend); `econSecond()` runs once per second (exports above the keep level, emergency grant). Capex is charged in `actions.place()` and refunded in `demolish()`. `unitEcon()` and `liveByType()` feed the ledger and tooltips.
 - **Market** (`market.ts`, numbers in `data/market.ts`). `GameState.market` holds the frontier, reputation, the model shelf, the deployed model and the current training run. Every tick `marketTrain()` adds the Training Cores' output to the run (and ships a model when it is done); once per second `marketSecond()` opens the market in Era III, grows the frontier, follows gateway uptime and calls `allocate()`, which serves the five segments from the gateways' compute (`stats.inferenceRate`) and pays the revenue into `econ.income.market`. `estimate()` runs the same allocation for any shelf model (UI and auto-deploy).
-- **Saves** (`save.ts`) use a versioned JSON schema. `migrate()` applies stepwise migrations (v1 → v2 → v3 → v4 are implemented and tested), and the loader rebuilds derived state.
+- **Operations** (`operations.ts`, numbers in `data/operations.ts`). `opsTick()` runs at the start of every step (peak curtailment flag; the Core's import is `importCap()`), `opsSecond()` once per second: queued grid upgrades, the fixed-price contract, then `wearSecond()` (service coverage into `Building.serviced`, wear, breakdown rolls on `s.rng`). `GameState.ops` holds the grid level and power deals; wear and the pod tier live on each `Building`.
+- **Saves** (`save.ts`) use a versioned JSON schema. `migrate()` applies stepwise migrations (v1 → v2 → v3 → v4 → v5 are implemented and tested), and the loader rebuilds derived state.
 
 ## Rendering (`src/render`)
 

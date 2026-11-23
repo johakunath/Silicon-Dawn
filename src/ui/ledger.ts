@@ -10,6 +10,10 @@ import { COST_LINES, INCOME_LINES, timeOfDay } from '../sim/state';
 import type { CostLine, GameState, IncomeLine } from '../sim/state';
 import type { BuildingDef, ItemId } from '../sim/types';
 import { itemIcon } from './icons';
+import {
+  canEnrolDr, canSignFixed, canUpgradeGrid, depreciation, drInForce, drPayPerSec, fixedActive, gridUpgradeCost, importCap, requestGridUpgrade, setDr, signFixed,
+} from '../sim/operations';
+import { DEPRECIATION_MIN, DR_PEAK, FIXED_MUL, FIXED_TIME, GRID_STEP, GRID_WAIT, RESIDUAL } from '../sim/data/operations';
 
 const fmt = (v: number) => {
   const a = Math.abs(v);
@@ -74,6 +78,7 @@ function costCentre(d: BuildingDef): string {
   if (d.workload) return 'earns through the colony market';
   if (d.storage || d.junction) return 'logistics';
   if (d.hub) return 'makes others faster';
+  if (d.service) return 'prevents breakdowns nearby';
   return 'supports other buildings';
 }
 
@@ -189,12 +194,34 @@ export class Ledger {
       <h3 class="lh">PER BUILDING (live, at average power price)</h3>
       <div class="ltab"><table class="stab"><tr><th>Building</th><th>#</th><th>Use</th><th>Capex each</th><th>Opex/min</th><th>Value/min</th><th>Net/min</th><th>Payback</th></tr>${rows || '<tr><td colspan="8" class="dim">Nothing built yet.</td></tr>'}</table></div>
       <h3 class="lh">EXPORTS</h3><div class="lexps">${exp}</div>${idleAccel}
-      <div class="kv lfoot"><span class="k">Spent on construction</span><span class="v">${cr(e.capex)}</span><span class="k">Upkeep of all buildings</span><span class="v">${cr(s.buildings.reduce((a, b) => a + upkeepOf(b.type), 0))}/min</span><span class="k">Emergency grants</span><span class="v">${e.grants}</span><span class="k">Demolish refund</span><span class="v">100% of capex for ${REFUND_GRACE / 60} min, then ${Math.round(REFUND_LATE * 100)}%</span></div>
+      <h3 class="lh">POWER DEALS</h3>${this.deals(s)}
+      <div class="kv lfoot"><span class="k">Spent on construction</span><span class="v">${cr(e.capex)}</span><span class="k">Upkeep of all buildings</span><span class="v">${cr(s.buildings.reduce((a, b) => a + upkeepOf(b.type), 0))}/min</span><span class="k">Emergency grants</span><span class="v">${e.grants}</span>${(() => { const dp = depreciation(s); return `<span class="k" data-tip="What your buildings would be worth on the books: capex written down in a straight line over ${DEPRECIATION_MIN} minutes to ${Math.round(RESIDUAL * 100)}%. No cash moves; it shows how fast hardware loses value.">Hardware book value</span><span class="v">${cr(dp.book)} (depreciating ${cr(dp.perMin)}/min, not cash)</span>`; })()}<span class="k">Demolish refund</span><span class="v">100% of capex for ${REFUND_GRACE / 60} min, then ${Math.round(REFUND_LATE * 100)}%</span></div>
       <div class="mact"><button data-codex>UNIT ECONOMICS (CODEX)</button><button class="primary" data-x>BACK</button></div></div>`;
   }
 
-  /** Handle a pointer event inside the ledger (export switches). Returns true if it changed something. */
+  /** Power deals: grid connection, fixed-price contract, peak curtailment. */
+  private deals(s: GameState): string {
+    const o = s.ops;
+    const g = canUpgradeGrid(s), f = canSignFixed(s), d = canEnrolDr(s);
+    const left = (t: number) => { const v = Math.max(0, Math.ceil(t - s.time)); return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`; };
+    const grid = `<div class="ldeal"><b>Grid connection</b><div class="dim">The Core imports up to <b>${importCap(s)}</b> power from the colony grid.</div>
+      ${o.gridReadyAt > 0 ? `<div class="am">+${GRID_STEP} power arriving in ${left(o.gridReadyAt)}</div><div class="sbar"><i class="am" style="width:${(1 - (o.gridReadyAt - s.time) / GRID_WAIT) * 100}%;background:#ffe066"></i></div>` : `<div class="dim">+${GRID_STEP} power for ${cr(gridUpgradeCost(s))}; the utility needs ${Math.round(GRID_WAIT / 60)} min to connect it.</div>`}
+      <button data-deal="grid"${g.ok ? '' : ` class="off" data-tip="${g.reason}"`}>${o.gridReadyAt > 0 ? 'QUEUED' : 'ORDER UPGRADE'}</button></div>`;
+    const fixed = `<div class="ldeal${fixedActive(s) ? ' on' : ''}"><b>Fixed-price contract</b><div class="dim">Imports cost a flat ${cr(POWER_PRICE * FIXED_MUL * 60)} per power-minute for ${Math.round(FIXED_TIME / 60)} min, instead of ${cr(POWER_PRICE * Math.min(...PRICE_CURVE.map((p) => p[1])) * 60)}–${cr(POWER_PRICE * Math.max(...PRICE_CURVE.map((p) => p[1])) * 60)} by the hour. A hedge: worth it if you import mostly at dusk.</div>
+      ${fixedActive(s) ? `<div class="g">ACTIVE · ${left(o.fixedUntil)} left</div>` : `<button data-deal="fixed"${f.ok ? '' : ` class="off" data-tip="${f.reason}"`}>SIGN</button>`}</div>`;
+    const dr = `<div class="ldeal${o.dr ? ' on' : ''}"><b>Peak curtailment</b><div class="dim">While the price is ${DR_PEAK}× average or more (dusk), the Core imports nothing and the grid pays you ${cr(drPayPerSec(s) * 60)}/min. Batteries or your own generators must carry the base.</div>
+      ${o.dr ? `<div class="${drInForce(s) ? 'am' : 'g'}">${drInForce(s) ? 'CURTAILING NOW' : 'ENROLLED'}</div>` : ''}<button data-deal="dr"${d.ok ? '' : ` class="off" data-tip="${d.reason}"`}>${o.dr ? 'LEAVE' : 'ENROL'}</button></div>`;
+    return `<div class="ldeals">${grid}${fixed}${dr}</div>`;
+  }
+
+  /** Handle a pointer event inside the ledger (export switches, power deals). Returns true if it changed something. */
   handle(target: HTMLElement, s: GameState): boolean {
+    const deal = target.closest<HTMLElement>('[data-deal]');
+    if (deal) {
+      if (deal.dataset.deal === 'grid') return requestGridUpgrade(s);
+      if (deal.dataset.deal === 'fixed') return signFixed(s);
+      if (deal.dataset.deal === 'dr') return setDr(s, !s.ops.dr);
+    }
     const b = target.closest<HTMLElement>('[data-sell]');
     if (!b) return false;
     const it = b.dataset.sell as ItemId;

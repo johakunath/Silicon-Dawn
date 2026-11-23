@@ -10,7 +10,7 @@ import { EVENT } from '../sim/data/events';
 import { GUIDE } from '../sim/data/guide';
 import { ITEMS, LINKS } from '../sim/data/items';
 import { TECHS } from '../sim/data/tech';
-import { acceptContract, canAfford, canResearch, checkLink, costOf, cycleMode, isUnlocked, lockReason, research, PlaceCheck, removeLink, repair } from '../sim/actions';
+import { OVERHAUL_FROM, acceptContract, canAfford, canResearch, checkLink, costOf, cycleMode, isUnlocked, lockReason, research, PlaceCheck, removeLink, repair } from '../sim/actions';
 import type { Link } from '../sim/types';
 import { ENGINE_TARGET, inputCap, outputCap } from '../sim/sim';
 import type { EraScore } from '../sim/state';
@@ -29,6 +29,7 @@ import { badgeFor, explain } from './status';
 import { Ledger, affordable, cr, creditCostHtml } from './ledger';
 import { MarketPanel } from './market';
 import { deployedModel, share } from '../sim/market';
+import { breakChance, wearRate } from '../sim/operations';
 
 const h = (tag: string, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 const fmt = (v: number) => (Math.abs(v) >= 10000 ? (v / 1000).toFixed(1) + 'k' : Math.abs(v) >= 100 ? Math.round(v).toString() : Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1));
@@ -175,7 +176,7 @@ export class Hud {
       audio.play('click');
     });
     const ovb = mw.querySelector('#ovbtns')!;
-    for (const [id, lbl, key] of [['power', '⚡ POWER', 'P'], ['heat', '♨ HEAT', 'H'], ['network', '◈ NET', 'N'], ['logistics', '➜ FLOW', 'O']] as const) {
+    for (const [id, lbl, key] of [['power', '⚡ POWER', 'P'], ['heat', '♨ HEAT', 'H'], ['network', '◈ NET', 'N'], ['logistics', '➜ FLOW', 'O'], ['service', '🔧 SERVICE', 'U']] as const) {
       const b = h('button', '', `<span>${lbl}</span><kbd>${key}</kbd>`); b.dataset.ov = id; b.onclick = () => this.g.setOverlay(id); ovb.appendChild(b);
     }
     add('legend', h('div', 'panel'));
@@ -308,6 +309,7 @@ export class Hud {
       heat: `<div class="ptitle">♨ HEAT OVERLAY</div>${row('linear-gradient(90deg,#3c96ff,#ff5028)', 'Rack heat: cool → hot (throttle above 100°)')}<div class="row">Pipes stay visible. Coolant comes from towers and chillers.</div>`,
       network: `<div class="ptitle">◈ COMPUTE NETWORK</div>${row('#6fe9ff', 'Data cable / fiber carrying compute')}${row('#ffb020', 'Saturated link (bandwidth-bound)')}${row('#ff3030', 'Blocked (the destination is full)')}`,
       logistics: `<div class="ptitle">➜ LOGISTICS FLOW</div>${row('#ffb020', 'Saturated (at capacity, so add a parallel belt)')}${row('#ff3030', 'Blocked (the destination is full or stalled)')}${row('#6a7080', 'Idle (nothing to carry)')}<div class="row">Packet shapes: ◆ quartz/silicon · ⬢ ore/metal · ▪ chips · ● fluids</div>`,
+      service: `<div class="ptitle">🔧 SERVICE COVERAGE</div>${row('#2fd6c0', 'Maintained by a Service Center or Robot Hub')}${row('#ffaa32', 'Outside coverage, wear 50–80%')}${row('#ff3c3c', 'Outside coverage, wear 80%+ (breakdowns likely)')}<div class="row">Machines wear with use and break down near the end of their life. Covered ones stay fresh.</div>`,
     };
     lg.style.display = ov === 'none' ? 'none' : 'block';
     lg.innerHTML = legends[ov] ?? '';
@@ -558,6 +560,13 @@ export class Hud {
     if (d.workload === 'engine') add('Engine charge', `${(s.engine.progress * 100).toFixed(2)}% of ${fmt(ENGINE_TARGET)}`);
     if (d.storage) add('Stockpile', 'all refined goods');
     if (b.type === 'hq') add('Research trickle', '+0.08/s');
+    if (wearRate(b.type) > 0) {
+      const w = Math.round(b.wear * 100);
+      const col = b.wear >= 0.8 ? '#ff5a5a' : b.wear >= 0.5 ? '#ffb347' : '#5dff9a';
+      add('Wear', `<span style="color:${col}">${w}%</span> · ${b.serviced ? '<span style="color:#2fd6c0">maintained</span>' : `no service, breakdown risk ${(breakChance(b.wear) * 6000).toFixed(b.wear > 0.5 ? 0 : 1)}%/min`}`);
+    }
+    if (d.service) add('Service', `${d.service} tiles · ${s.buildings.filter((o) => o.serviced).length} buildings maintained by all centres`);
+    if (b.type === 'pod') add('Hardware', b.tier === 2 ? 'Next-gen (+35% compute)' : s.fx.podTier > 0 ? 'Previous generation (still works)' : 'Current generation');
     if (b.type === 'pod') add('Mode <kbd>M</kbd>', b.mode === 'training' ? 'Training (+25% compute, worse inference)' : b.mode === 'inference' ? 'Inference (+30% at Gateways, cooler)' : 'Balanced');
     const bufs: string[] = [];
     for (const [it] of Object.entries(d.inputs ?? {}) as [ItemId, number][]) {
@@ -585,12 +594,13 @@ export class Hud {
     const ratioHtml = ratios.length ? `<details class="ratio"><summary>How many do I need?</summary>${ratios.map((r) => `<div>${r}</div>`).join('')}</details>` : '';
     // Static shell (header, ratio <details>, action buttons) is rebuilt only when the selection or its button set
     // changes; live values are patched in place. Rebuilding everything at 4 Hz swallowed clicks and closed <details>.
-    const key = `B${b.id}|${b.broken > 0}|${ratioHtml.length}`;
+    const canFix = b.broken > 0 || b.wear >= OVERHAUL_FROM;
+    const key = `B${b.id}|${canFix}|${b.broken > 0}|${ratioHtml.length}`;
     if (force || el.dataset.key !== key) {
       el.dataset.key = key;
       el.innerHTML = `<div class="hd"><img src="${thumb(b.type)}"><div><h3>${d.name}</h3><div class="role">${d.desc}</div></div></div>
       <div data-live></div>${ratioHtml}<div data-core></div>
-      <div class="acts">${b.type === 'hq' ? '<button id="i-stats" data-tip="Full production & power statistics (I)">📊 STATISTICS <kbd>I</kbd></button>' : ''}${b.type === 'pod' ? '<button id="i-mode" data-tip="Cycle Balanced → Training → Inference">MODE <kbd>M</kbd></button>' : ''}${b.broken > 0 ? '<button id="i-rep">REPAIR (10 metal) <kbd>R</kbd></button>' : ''}<button id="i-link" data-tip="Start a link from this building, then click the other building">⟿ CONNECT <kbd>L</kbd></button>${b.type !== 'hq' ? '<button id="i-move" data-tip="Pick it up and place it elsewhere (free)">✥ MOVE <kbd>V</kbd></button><button id="i-del" data-tip="Remove it. Refunds 100%.">✕ DEMOLISH <kbd>Del</kbd></button>' : ''}</div>`;
+      <div class="acts">${b.type === 'hq' ? '<button id="i-stats" data-tip="Full production & power statistics (I)">📊 STATISTICS <kbd>I</kbd></button>' : ''}${b.type === 'pod' ? '<button id="i-mode" data-tip="Cycle Balanced → Training → Inference">MODE <kbd>M</kbd></button>' : ''}${b.broken > 0 ? '<button id="i-rep">REPAIR (10 metal) <kbd>R</kbd></button>' : canFix ? '<button id="i-rep" data-tip="Replace worn parts: wear back to 0%">OVERHAUL (10 metal) <kbd>R</kbd></button>' : ''}<button id="i-link" data-tip="Start a link from this building, then click the other building">⟿ CONNECT <kbd>L</kbd></button>${b.type !== 'hq' ? '<button id="i-move" data-tip="Pick it up and place it elsewhere (free)">✥ MOVE <kbd>V</kbd></button><button id="i-del" data-tip="Remove it. Refunds 100%.">✕ DEMOLISH <kbd>Del</kbd></button>' : ''}</div>`;
       const q = (id: string) => el.querySelector(id) as HTMLElement | null;
       q('#i-mode')?.addEventListener('click', () => { cycleMode(s, b.id); this.refreshInspector(true); });
       q('#i-rep')?.addEventListener('click', () => { if (!repair(s, b.id)) audio.play('error'); });
@@ -874,7 +884,7 @@ export class Hud {
       ${graphicsRows(g)}
       <div class="setrow"><label>Performance stats</label><button id="s-fps" class="${st.showFps ? 'on' : ''}">${st.showFps ? 'SHOWN (F3)' : 'HIDDEN (F3)'}</button></div>
       <div class="mact" style="justify-content:space-between"><div style="display:flex;gap:8px"><button id="m-save">SAVE / LOAD</button><button id="m-title">MAIN MENU</button></div><button class="primary" data-x>RESUME</button></div>
-      <div style="margin-top:18px;color:#93a4c4;font-size:15px;line-height:1.6"><b>Keys:</b> WASD pan · wheel zoom · Q/E rotate · 1–9 build · L link · X demolish · Del demolish selected · P/H/N/O overlays · T tech · K ledger · B market · J guide · Z next problem · C core · F focus · M pod mode · R repair · Space pause · +/− speed · F3 stats<br><b>Touch:</b> drag pan · pinch zoom · twist rotate · tap place or select · hold to inspect · right-edge buttons rotate, zoom, copy, next problem · red pill cancels</div></div>`;
+      <div style="margin-top:18px;color:#93a4c4;font-size:15px;line-height:1.6"><b>Keys:</b> WASD pan · wheel zoom · Q/E rotate · 1–9 build · L link · X demolish · Del demolish selected · P/H/N/O/U overlays · T tech · K ledger · B market · J guide · Z next problem · C core · F focus · M pod mode · R repair · Space pause · +/− speed · F3 stats<br><b>Touch:</b> drag pan · pinch zoom · twist rotate · tap place or select · hold to inspect · right-edge buttons rotate, zoom, copy, next problem · red pill cancels</div></div>`;
     const q = (id: string) => m.querySelector(id) as HTMLInputElement;
     q('#s-vol').oninput = () => { st.volume = Number(q('#s-vol').value); g.applySettings(); };
     q('#s-mus').oninput = () => { st.music = Number(q('#s-mus').value); g.applySettings(); };

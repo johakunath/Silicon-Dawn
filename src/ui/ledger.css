@@ -27,4 +27,12 @@
 .lexp.on { border-color: var(--green); color: var(--text); background: rgba(93, 255, 154, .08); }
 .lexp .ic { vertical-align: -3px; }
 .lfoot { max-width: 620px; margin-top: 16px; }
+.ldeals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ldeal { padding: 10px 12px; background: rgba(16, 22, 44, .9); border: 1px solid var(--line); font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
+.ldeal.on { border-color: var(--green); }
+.ldeal b { font-size: 16px; }
+.ldeal .sbar { width: 100%; }
+.ldeal button { align-self: flex-start; font-size: 14px; padding: 4px 14px; }
+.ldeal button.off { opacity: .45; }
+@media (max-width: 900px) { .ldeals { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .lgrid { grid-template-columns: 1fr; } }

@@ -13,7 +13,7 @@ import { FinaleFX } from './finale';
 import { SceneRig } from './scene';
 import { baseHeight, buildProps, buildTerrain, buildWater, PropLayer, tileHeight } from './terrain';
 
-export type Overlay = 'none' | 'power' | 'heat' | 'network' | 'logistics';
+export type Overlay = 'none' | 'power' | 'heat' | 'network' | 'logistics' | 'service';
 
 export class WorldView {
   terrain!: THREE.Mesh;
@@ -258,6 +258,27 @@ export class WorldView {
         }
       }
     }
+    // service coverage (U overlay, or placing a Service Center / Robot Hub): covered tiles, and worn buildings outside it
+    let svc: Uint8Array | null = null;
+    if (this.overlay === 'service' || (pd && (pd.service || pd.hub))) {
+      svc = new Uint8Array(S * S);
+      for (const c of s.buildings) {
+        const dc = BUILDING[c.type];
+        const r = dc.service ?? (dc.hub && (c.inBuf.robots ?? 0) > 0 ? dc.hub : 0);
+        if (!r || c.broken > 0) continue;
+        const cx = c.x + dc.size / 2, cy = c.y + dc.size / 2;
+        for (let y = Math.floor(cy - r); y <= cy + r; y++) for (let x = Math.floor(cx - r); x <= cx + r; x++) {
+          if (x < 0 || y < 0 || x >= S || y >= S) continue;
+          const dd = Math.hypot(x + 0.5 - cx, y + 0.5 - cy);
+          if (dd <= r + 0.5) svc[y * S + x] = Math.max(svc[y * S + x], dd > r - 0.6 ? 2 : 1);
+        }
+      }
+      if (this.overlay === 'service') for (const b of s.buildings) {
+        if (b.serviced || b.wear < 0.5) continue;
+        const db = BUILDING[b.type];
+        for (let y = b.y; y < b.y + db.size; y++) for (let x = b.x; x < b.x + db.size; x++) svc[y * S + x] = b.wear >= 0.8 ? 4 : 3;
+      }
+    }
     const heatMap = this.overlay === 'heat' ? new Float32Array(S * S) : null;
     if (heatMap) for (const b of s.buildings) {
       const d = BUILDING[b.type];
@@ -298,6 +319,13 @@ export class WorldView {
           } else { r = 20; g = 40; b = 80; a = 0.15; }
         } else if (this.overlay === 'network' || this.overlay === 'logistics') {
           r = 8; g = 12; b = 28; a = 0.38;
+        } else if (this.overlay === 'service' && svc) {
+          const v = svc[i];
+          if (v === 4) { r = 255; g = 60; b = 60; a = 0.6; glow = true; }
+          else if (v === 3) { r = 255; g = 170; b = 50; a = 0.55; glow = true; }
+          else if (v === 2) { r = 47; g = 214; b = 192; a = 0.55; glow = true; }
+          else if (v === 1) { r = 47; g = 214; b = 192; a = 0.25; }
+          else { r = 10; g = 16; b = 30; a = 0.3; }
         }
         if (pd) {
           const dep = w.deposit[i];
@@ -306,6 +334,8 @@ export class WorldView {
             r = c[0]; g = c[1]; b = c[2]; a = 0.55; glow = true;
           } else if (pd.needsWater && w.level[i] > 0 && isWaterAdjacent(w, x, y, 1)) {
             r = 80; g = 180; b = 255; a = 0.5; glow = true;
+          } else if (svc && (pd.service || pd.hub) && svc[i] > 0) {
+            r = 47; g = 214; b = 192; a = svc[i] === 2 ? 0.45 : 0.18; glow = svc[i] === 2;
           } else if (cover && (pd.power < 0) && !pd.deposit && !pd.needsWater) {
             if (cover[i] >= 0) { r = 255; g = 216; b = 74; a = 0.18; glow = false; }
           }

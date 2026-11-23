@@ -367,6 +367,7 @@ export class Game {
       case 'h': this.setOverlay('heat'); break;
       case 'n': this.setOverlay('network'); break;
       case 'o': this.setOverlay('logistics'); break;
+      case 'u': this.setOverlay('service'); break;
       case 't': this.hud.openTech(); break;
       case 'i': this.hud.openStats(); break;
       case 'k': this.hud.openLedger(); break;
@@ -376,7 +377,7 @@ export class Game {
       case 'f': if (this.view.selected) { const b = this.view.selected; const d = BUILDING[b.type]; this.focus(b.x + d.size / 2, b.y + d.size / 2); } break;
       case 'z': this.nextProblem(); break;
       case 'm': if (this.view.selected?.type === 'pod') { cycleMode(this.s, this.view.selected.id); this.hud.refreshInspector(true); } break;
-      case 'r': if (this.view.selected && this.view.selected.broken > 0) repair(this.s, this.view.selected.id); break;
+      case 'r': if (this.view.selected) repair(this.s, this.view.selected.id); break;
       case 'f3': this.settings.showFps = !this.settings.showFps; this.applySettings(); e.preventDefault(); break;
       default:
         if (/^[0-9]$/.test(k)) {

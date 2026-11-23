@@ -450,6 +450,23 @@ const builders: Record<string, Builder> = {
     g.box(1.2, 0.3, 0.04, 0, 0.35, 0.36, G.yellow);
     return { body: b.build()!, glow: g.build(), height: 1.6, emitters: [{ x: 0.1, y: 1.0, z: 0.65, kind: 'spark' }] };
   },
+  service() {
+    // maintenance depot: workshop with roll-up doors, a crane arm and a teal beacon that turns
+    const b = new GB(), g = new GB();
+    foundation(b, 2);
+    b.box(1.6, 0.85, 1.1, 0, 0.12, -0.3, C.concrete);
+    b.box(1.7, 0.08, 1.2, 0, 0.97, -0.3, C.steelD);
+    for (const x of [-0.42, 0.42]) { b.box(0.62, 0.6, 0.04, x, 0.12, 0.26, C.steelD); g.box(0.5, 0.03, 0.01, x, 0.66, 0.285, G.cyan); }
+    b.box(0.5, 0.12, 0.5, -0.5, 0.12, 0.62, C.yellow);
+    b.box(0.08, 0.9, 0.08, 0.62, 0.12, 0.62, C.yellow);
+    b.box(0.08, 0.08, 0.7, 0.62, 1.0, 0.35, C.yellow);
+    b.cyl(0.05, 0.05, 0.55, -0.55, 1.05, -0.55, C.steel, 5);
+    g.box(1.2, 0.05, 0.02, 0, 0.9, 0.205, G.cyan);
+    const s = new GB();
+    s.box(0.22, 0.1, 0.1, 0, 0, 0, C.dark);
+    s.box(0.08, 0.06, 0.06, 0.12, 0.02, 0, '#2fd6c0');
+    return { body: b.build()!, glow: g.build(), spin: { geo: s.build()!, pivot: new THREE.Vector3(-0.55, 1.66, -0.55), axis: 'y', speed: 2.6 }, height: 1.8, emitters: [] };
+  },
   hub() {
     const b = new GB(), g = new GB();
     b.cyl(0.95, 0.98, 0.18, 0, 0, 0, C.steelD, 16);

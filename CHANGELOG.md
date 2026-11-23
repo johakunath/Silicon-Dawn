@@ -3,6 +3,11 @@
 Newest first. Each entry says what a player notices. Technical detail lives in the commit history.
 
 ## Unreleased
+- Operations: machines wear as they work (hot racks faster) and break down more and more often near the end of their life. Select one to see its wear and breakdown risk; `R` overhauls it for 10 metal.
+- New Service Center (Era II): maintains everything within 11 tiles so covered machines stay fresh, for an upkeep every minute. Robot Hubs now service their radius too. New Service overlay (`U`) shows coverage and worn machines outside it.
+- Power deals in the ledger: a bigger grid connection for the Core (arrives after a 3-minute wait), a fixed-price power contract, and paid peak curtailment at dusk.
+- New tech Next-Gen Accelerators: pods built afterwards make 35% more compute for the same power; older pods keep working. The ledger shows hardware book value and depreciation.
+- New Codex chapter "Operations". Saves move to version 5.
 - Colony market (Era III on): five customer segments (chat, media, code, enterprise, science) with their own price, model quality, latency and uptime needs, and demand that keeps growing. Inference Gateways sell answers with your deployed model; spare capacity keeps latency low, uptime builds reputation, and the panel shows lost revenue and why.
 - Models: the Training Core always trains your next model (Lite, Standard or Max). Models age as rival labs push the frontier, bigger models answer better but cost more compute per answer, and auto-deploy keeps the best earner live. Every colony starts with an open baseline model.
 - Market & Models panel (`B`, or the Market card on the right): revenue, lost demand, reputation, gateway load and latency, the frontier, a revenue chart, the training run, the model shelf with deploy and retire.

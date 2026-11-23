@@ -306,7 +306,7 @@ body.touch #cancelpill.show { display: block; position: absolute; left: 50%; bot
 body.touch #speed button { min-width: 58px; min-height: 52px; font-size: 20px; }
 body.touch #topbar > button { min-height: 52px; }
 body.touch #build .tabs button { min-height: 52px; }
-body.touch #ovbtns button { min-height: 50px; font-size: 14px; }
+body.touch #ovbtns button { min-height: 42px; font-size: 13px; }
 body.touch .setrow button, body.touch .mact button, body.touch #insp .acts button { min-height: 52px; min-width: 64px; }
 body.touch kbd, body.touch #hint { display: none !important; }
 body.touch #side, body.touch #insp { right: 106px; }
