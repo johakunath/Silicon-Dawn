@@ -26,6 +26,8 @@ export interface ProfileSpec {
   particleDensity: number;
   /** trees cast shadows */
   propShadows: boolean;
+  /** redraw the shadow map every n-th frame while the camera is still (1 = every frame); saves CPU draw calls */
+  shadowEvery: number;
   /** default frame cap while the game runs (0 = no cap) */
   fps: number;
   /** cap while the player touches, drags or the camera moves (0 = same as fps) */
@@ -35,8 +37,8 @@ export interface ProfileSpec {
 }
 
 export const PROFILES: Record<Profile, ProfileSpec> = {
-  quality: { label: 'Quality', maxDpr: 2, msaa: 8, shadows: true, shadowMap: 4096, softShadows: true, bloomScale: 1, particleDensity: 1, propShadows: true, fps: 0, activeFps: 0, idleFps: 0 },
-  performance: { label: 'Performance', maxDpr: 1.25, msaa: 2, shadows: true, shadowMap: 1024, softShadows: false, bloomScale: 0.5, particleDensity: 0.5, propShadows: false, fps: 30, activeFps: 60, idleFps: 10 },
+  quality: { label: 'Quality', maxDpr: 2, msaa: 8, shadows: true, shadowMap: 4096, softShadows: true, bloomScale: 1, particleDensity: 1, propShadows: true, shadowEvery: 1, fps: 0, activeFps: 0, idleFps: 0 },
+  performance: { label: 'Performance', maxDpr: 1.25, msaa: 2, shadows: true, shadowMap: 1024, softShadows: false, bloomScale: 0.5, particleDensity: 0.5, propShadows: false, shadowEvery: 3, fps: 30, activeFps: 60, idleFps: 10 },
 };
 
 export interface GfxSettings {
@@ -90,6 +92,14 @@ export function frameDue(now: number, last: number, fps: number): boolean {
   return now - last >= 1000 / fps - 1.5;
 }
 
+/**
+ * Shadow map refresh. A skipped refresh keeps the old map and its matrix, so still scenery stays correct;
+ * while the camera moves (the shadow frustum follows the view) it refreshes every frame.
+ */
+export function shadowDue(frame: number, every: number, cameraMoved: boolean): boolean {
+  return every <= 1 || cameraMoved || frame % every === 0;
+}
+
 /** Applies a profile to the renderer and decides which animation frames render. */
 export class QualityManager {
   gfx = loadGfx();
@@ -98,6 +108,7 @@ export class QualityManager {
   private lastFrame = -1e9;
   private lastInput = -1e9;
   private camSig = '';
+  private frameN = 0;
   private propsGroup: THREE.Object3D | null = null;
 
   constructor(private rig: SceneRig, private view: () => WorldView, private simRunning: () => boolean) {
@@ -132,6 +143,7 @@ export class QualityManager {
       rig.sun.shadow.map?.dispose();
       (rig.sun.shadow as { map: THREE.WebGLRenderTarget | null }).map = null;
     }
+    r.shadowMap.autoUpdate = p.shadowEvery <= 1;
     r.shadowMap.needsUpdate = true;
     if (recompile) rig.scene.traverse((o) => { const m = (o as THREE.Mesh).material; if (m) for (const mm of Array.isArray(m) ? m : [m]) mm.needsUpdate = true; });
     rig.bloomScale = p.bloomScale;
@@ -149,12 +161,14 @@ export class QualityManager {
     }
     const t = this.rig.target;
     const sig = `${t.x.toFixed(3)},${t.z.toFixed(3)},${this.rig.view.toFixed(3)},${this.rig.yaw.toFixed(4)}`;
-    if (sig !== this.camSig) { this.camSig = sig; this.lastInput = Math.max(this.lastInput, now - 600); }
+    const moved = sig !== this.camSig;
+    if (moved) { this.camSig = sig; this.lastInput = Math.max(this.lastInput, now - 600); }
     const active = now - this.lastInput < 1000;
     const idle = !this.simRunning() && now - this.lastInput > 2000;
     const fps = targetFps(this.spec, this.gfx.fpsCap, { hidden: typeof document !== 'undefined' && document.hidden, active, idle });
     if (!frameDue(now, this.lastFrame, fps)) return false;
     this.lastFrame = now;
+    if (shadowDue(++this.frameN, this.spec.shadowEvery, moved || now - this.lastInput < 300)) this.rig.renderer.shadowMap.needsUpdate = true;
     return true;
   }
 }

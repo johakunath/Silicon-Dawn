@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PROFILES, autoProfile, frameDue, resolveProfile, targetFps } from '../src/render/quality';
+import { PROFILES, autoProfile, frameDue, resolveProfile, shadowDue, targetFps } from '../src/render/quality';
 import { angleDelta, twoFinger } from '../src/game/touch';
 import { cancelLabel } from '../src/ui/touchbar';
 import { CODE_ALPHABET, autoUploadAllowed, codeFromBytes, decodeSave, encodeSave, normalizeCode, runFromTag, saveSig, summarize, validUrl } from '../src/ui/cloudsave';
@@ -34,6 +34,13 @@ describe('quality profiles', () => {
     expect(targetFps(q, null, st)).toBe(0);
     expect(targetFps(q, null, { ...st, idle: true })).toBe(0);
     expect(targetFps(q, null, { ...st, hidden: true })).toBe(-1);
+  });
+
+  it('Performance refreshes shadows every 3rd still frame, every frame while the camera moves', () => {
+    const due = (moved: boolean) => Array.from({ length: 9 }, (_, i) => shadowDue(i + 1, PROFILES.performance.shadowEvery, moved)).filter(Boolean).length;
+    expect(due(false)).toBe(3);
+    expect(due(true)).toBe(9);
+    expect(shadowDue(5, PROFILES.quality.shadowEvery, false)).toBe(true);
   });
 
   it('frameDue skips refreshes on a 120 Hz screen to hold the cap', () => {

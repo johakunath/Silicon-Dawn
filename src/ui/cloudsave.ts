@@ -9,6 +9,11 @@ import type { Game } from '../game/game';
 
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I, O, 0, 1
 const KEY = 'sd_cloud_v1';
+/**
+ * The owner's deployed web app (tools/apps-script/README.md). Set here once it exists, so players only
+ * enter their sync code (Ruinenstadt-Berlin does the same). Empty = each player pastes a URL in Save / Load.
+ */
+export const DEFAULT_CLOUD_URL = '';
 const AUTO_EVERY_MS = 5 * 60 * 1000;
 const KEEPALIVE_LIMIT = 60000; // browsers cap keepalive request bodies at 64 KB
 
@@ -116,8 +121,8 @@ export async function decodeSave(enc: string, data: string): Promise<string> {
 
 export class CloudSave {
   cfg: CloudConfig = (() => {
-    const def: CloudConfig = { url: '', code: '', auto: true };
-    try { return { ...def, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; } catch { return def; }
+    const def: CloudConfig = { url: DEFAULT_CLOUD_URL, code: '', auto: true };
+    try { const c = { ...def, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; if (!c.url) c.url = DEFAULT_CLOUD_URL; return c; } catch { return def; }
   })();
   busy = false;
   last: CloudInfo | null = null;

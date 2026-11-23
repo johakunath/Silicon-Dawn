@@ -13,7 +13,7 @@ Play on Standard from a new campaign, with telemetry on. Note answers in a GitHu
 
 ## Tablet test (Galaxy Tab S9, after E2)
 Thermals and real touch feel cannot be measured in the cloud. Takes 30 minutes. Note answers in a GitHub issue.
-1. Open the game in Chrome on the tablet, landscape. Menu → Graphics should say "Auto picked Performance (touch screen)".
+1. Open the game on the tablet in landscape, in the browser you use for Ruinenstadt (Firefox there), then repeat the touch steps once in Chrome. Menu → Graphics should say "Auto picked Performance (touch screen)".
 2. Charge above 50%, close other apps, screen brightness at about 70%. Note the battery percentage.
 3. Play 20 minutes at 1× speed with the game running (not paused). Then feel the back of the tablet near the camera: cool, warm or hot? Note the battery percentage again (drain per 20 min).
 4. Repeat 10 minutes with Graphics → Quality. Is it clearly warmer? Does it stutter?
@@ -23,7 +23,7 @@ Thermals and real touch feel cannot be measured in the cloud. Takes 30 minutes. 
 8. Hold a finger on a building for half a second: does a tooltip and the inspector appear? Hold on a top-bar gauge: does its tooltip appear?
 9. Right-edge buttons (rotate, zoom, copy, problem, Core): easy to hit with the thumb? Any button too small anywhere else?
 10. S Pen: hovering shows tooltips, a tap places. Anything odd?
-11. Samsung Internet: repeat steps 6–8 once.
+11. Samsung Internet (optional): repeat steps 6–8 once.
 12. Cloud save: upload on the desktop, load on the tablet, play 5 minutes, switch apps, load on the desktop. Did the tablet's progress arrive?
 
 ## Open questions (need a human)
