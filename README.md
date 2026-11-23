@@ -2,9 +2,9 @@
 
 An isometric strategy and automation game about building the **physical infrastructure behind AI**. You start with sand, sunlight and a single Command Core, and you finish with a glowing continent of fabs, datacenters, fiber clusters and fusion. The ending is a clearly **fictional** capstone, the Dawn Engine.
 
-Built with **Vite, TypeScript and Three.js** (WebGL). It plays best on a gaming PC with a large monitor.
+Built with **Vite, TypeScript and Three.js** (WebGL). It plays on a desktop PC and on a tablet (tested in emulation for an 11-inch Galaxy Tab S9 with touch and S Pen).
 
-**Play online:** https://johakunath.github.io/Silicon-Dawn/ (saves stay in your browser's local storage; use Menu → Save/Load → Export JSON to keep a portable copy).
+**Play online:** https://johakunath.github.io/Silicon-Dawn/ (saves stay in your browser's local storage; use Menu → Save/Load → Export JSON to keep a portable copy, or set up the optional cloud save in your own Google Sheet: `tools/apps-script/README.md`).
 
 ## Run
 
@@ -47,7 +47,7 @@ The dev server must be running.
 npx tsx scripts/shots.ts era1
 ```
 
-The scenarios are `title`, `era1` through `era5` and `stress`. Each one plays headlessly through the real renderer and saves day, night, wide and overlay screenshots to `screenshots/`, then benchmarks frame times. `stress` builds 600+ buildings.
+The scenarios are `title`, `era1` through `era5` and `stress`. `GFX=performance` or `GFX=quality` benchmarks one graphics profile, `TABLET=1` emulates the tablet, `SHOTDIR=…` saves screenshots elsewhere, `NOSHOT=1` only benchmarks, `FRAMES=n` sets the benchmark length. Each one plays headlessly through the real renderer and saves day, night, wide and overlay screenshots to `screenshots/`, then benchmarks frame times. `stress` builds 600+ buildings.
 
 ```bash
 npx tsx scripts/playtest.ts
@@ -70,6 +70,18 @@ npx tsx scripts/uicheck.ts
 | Tools (bottom bar) | `L` link (click two buildings in either order, or click a link to remove it) · `V` move · `X` demolish (100% refund) · auto-link toggle · `G` pipette |
 | Info | Hover anything for rich tooltips · `I` statistics · `K` ledger · `J` codex · `T` tech tree · `P H N O` overlays · `Z` next problem · `C` Core |
 | Misc | `M` pod mode · `R` repair · Space pause · +/− speed · F3 performance stats |
+
+### Touch (tablet) and S Pen
+
+| | |
+|---|---|
+| Camera | One finger drag pans · pinch zooms · two-finger twist rotates · right-edge buttons: ⟲ ⟳ rotate 90°, ＋ − zoom, ◎ back to the Core |
+| Build | Tap a build item, then tap the map to place (the ghost stays where you tapped). The red **Cancel** pill stops building (replaces right-click and Esc) |
+| Inspect | Tap selects. **Hold** half a second for the tooltip (replaces hover); in build mode, hold shows the placement check without building. Hold any button or gauge for its tooltip |
+| Tools | Link, move, demolish and auto-link in the bottom bar; pause and speed in the top bar; ⧉ copy (pipette) and ⚠ next problem on the right edge |
+| S Pen | Hover shows tooltips like a mouse; tap and drag work like a finger |
+
+The hotbar and key hints are hidden on touch. Menu → **Graphics** switches between **Performance** (default on touch screens: lower resolution, 30 fps, keeps the tablet cool) and **Quality** (default with a mouse), and sets a frame rate limit.
 
 A new campaign starts **paused** and opens an interactive tutorial (13 steps, with a spotlight on the exact button or map spot). You can restart it from the Codex.
 

@@ -41,10 +41,17 @@
 - `particles.ts` is a single `THREE.Points` draw for steam, smoke, heat shimmer, sparks, build dust and finale bursts.
 - `finale.ts` provides the Dawn Engine light column, halo and expanding flash wave.
 
+- `quality.ts` holds the two graphics profiles (Performance, Quality) as data and a `QualityManager` that applies one to the renderer (pixel ratio, MSAA samples, shadow map, bloom size, particle density, tree shadows) and paces frames: `Game.frame` asks `shouldRender()` first, which caps the frame rate, slows down when the game is paused and nothing moves, and skips hidden tabs.
+
+## Input
+
+- Mouse and keyboard live in `game/game.ts`. Touch and pen pointers go to `game/touch.ts` (pan, pinch, twist, tap, long-press), which calls small public hooks on `Game` (`tap`, `panScreen`, `zoomAt`, `rotateBy`, `fling`, `pointAt`). `Game.touchMode` (and `body.touch`) switch off hover tooltips and show the touch rail (`ui/touchbar.ts`).
+
 ## UI and audio
 
 - The ledger (`ui/ledger.ts`, `ui/ledger.css`) renders the credits chip, the ledger modal (`K`) and the money rows in build tooltips; `hud.ts` only hooks it in.
 - The DOM HUD (`ui/hud.ts`) has heavy parts throttled to 4 Hz, and the badges follow buildings every frame. Badges are colour-blind safe: an octagon ✕ means severe, a triangle ▲ means a warning, plus a glyph.
+- Menu rows for graphics live in `ui/settings.ts`. Cloud save (`ui/cloudsave.ts`) treats the save as an opaque string from `Game.saveJson()`, gzips it and posts it as `text/plain` to the owner's Apps Script web app (`tools/apps-script/Code.gs`, which stores it in 40,000-character Sheet rows).
 - Audio (`audio/audio.ts`) is all procedural: sound effects come from oscillators and noise with envelopes and a convolver reverb. The ambient bed is layered (wind, pad, mains hum, fans, choir, crickets) and its gains follow building count, power, compute, night and era. A sequencer plays an era-specific scale and gets denser with compute.
 
 ## Extending

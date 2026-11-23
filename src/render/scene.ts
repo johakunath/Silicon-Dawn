@@ -73,6 +73,8 @@ export class SceneRig {
   yaw = Math.PI / 4;
   pitch = 0.62;
   night = 0; // 0 day .. 1 night
+  /** bloom resolution relative to CSS pixels (set by the quality profile) */
+  bloomScale = 1;
   glowLevel = 1; // multiplier for emissive materials (set by caller)
   sunDir = new THREE.Vector3();
   sunColor = new THREE.Color();
@@ -115,7 +117,7 @@ export class SceneRig {
     const w = window.innerWidth, h = window.innerHeight;
     this.renderer.setSize(w, h, false);
     this.composer.setSize(w, h);
-    this.bloom.setSize(w, h);
+    this.bloom.setSize(Math.max(1, Math.round(w * this.bloomScale)), Math.max(1, Math.round(h * this.bloomScale)));
     this.updateCamera();
   }
 

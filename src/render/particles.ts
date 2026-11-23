@@ -17,6 +17,9 @@ export class Particles {
   private n = 0;
   private uniforms = { uScale: { value: 30 }, uPixel: { value: 1 } };
   reduced = false;
+  /** share of particles emitted (quality profile); bursts are never thinned */
+  density = 1;
+  private densityAcc = 0;
 
   constructor() {
     const g = new THREE.BufferGeometry();
@@ -44,6 +47,7 @@ export class Particles {
 
   emit(kind: PKind, x: number, y: number, z: number, count = 1, spread = 0.1) {
     if (this.reduced && kind !== 'burst') count = Math.ceil(count * 0.3);
+    if (this.density < 1 && kind !== 'burst') { this.densityAcc += count * this.density; count = Math.floor(this.densityAcc); this.densityAcc -= count; }
     for (let c = 0; c < count; c++) {
       if (this.n >= MAX) return;
       const i = this.n++;

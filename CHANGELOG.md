@@ -11,6 +11,9 @@ Newest first. Each entry says what a player notices. Technical detail lives in t
 - Belts out of the stockpile now stop at a build reserve sized to the era, so a busy base can always afford its next building.
 - Saves move to version 3; older saves open with a balance sized to the era they reached.
 - Backlog: new epic E2 Tablet and quality profiles; later epics renumbered.
+- Tablet support: touch controls (drag, pinch, twist, tap, hold to inspect), a right-edge button rail and a red Cancel pill, finger-sized buttons, UI that fits an 11-inch screen.
+- Graphics profiles in the menu: Performance (cool tablet: lower resolution, 30 fps, slow redraw when paused, nothing in a hidden tab) and Quality (8× anti-aliasing, sharper shadows); Auto picks one per device. Frame rate limit setting.
+- Optional cloud save in your own Google Sheet: one save on desktop and tablet with a private sync code, auto upload that never overwrites a further-along game.
 - Docs: new `CLAUDE.md` (agent guide), `BACKLOG.md` (epics and work packages), this changelog, `docs/RESEARCH.md`. Old `ROADMAP.md` and `HANDOFF.md` folded into these; original brief and full playtest log moved to `docs/archive/`.
 - Docs: `docs/DESIGN.md` (v2 direction: colony economy, market, operations, events, scenarios, telemetry) and `docs/IDEAS.md` (parked ideas).
 - Deploy workflow runs on `main` (and on `master` until the rename).

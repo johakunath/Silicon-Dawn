@@ -11,17 +11,17 @@ Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, 25 Vi
 | # | Epic | Depends on | Status |
 |---|---|---|---|
 | E1 | Colony economy: money, running costs, ledger | none | done |
-| E2 | Tablet and quality profiles: touch controls, Performance/Quality, cloud save | none | todo |
+| E2 | Tablet and quality profiles: touch controls, graphics profiles, cloud save | none | done |
 | E3 | Market and models: demand, model lifecycle, revenue | E1 | todo |
 | E4 | Operations: wear, Service Center, power deals, light hardware tiers | E1 | todo |
 | E5 | Decision events and politics | E1 (E3 helps) | todo |
 | E6 | Setting pass: sci-fi colony framing, intro, eras, Codex | E3 | todo |
-| E7 | Scenarios and run modifiers | E1, E3–E5 | todo |
+| E7 | Scenarios and run modifiers | E1–E5 | todo |
 | E8 | Telemetry and friends score sheet | E1 | todo |
 | E9 | Launch readiness: blueprints, tutorial update, housekeeping | E1–E8 | todo |
 | — | Owner's first full play, then a fix round, then share with friends | E8, E9 | owner |
 
-E4 and E5 share hotspot files with E3, so run E1 → E3 → E4/E5 one at a time. E2 runs in parallel with E1 (render, input, settings, cloud save; small hooks in `game.ts` and `hud.ts`). E8 can run in parallel with E4 or E5 (different files, except one HUD hook).
+E4 and E5 share hotspot files with E3, so run E1 → E3 → E4/E5 one at a time. E8 can run in parallel with E4 or E5 (different files, except one HUD hook).
 
 ---
 
@@ -35,11 +35,11 @@ Goal: every building has a price, every minute has a cost, and the player can se
 - Hotspots: types, state, save, hud. Size: L.
 
 ## E2 Tablet and quality profiles
-Goal: the game plays well on a Galaxy Tab S9 and on weaker machines, and a run can continue on another device.
-- **Touch controls:** tap to select and build, drag to pan, pinch to zoom, two-finger rotate; touch-sized buttons.
-- **Quality profiles:** two profiles, Performance and Quality (shadows, bloom, MSAA, resolution scale, particle counts), picked automatically with a manual override.
-- **Cloud save:** cross-device save through a Google Sheet and an Apps Script web app (same pattern as E8 telemetry).
-- Hotspots: game (input hooks), hud (settings hook). Size: M–L.
+Goal: the game plays well on desktop and on a Samsung Galaxy Tab S9 (11-inch, 2560×1600, touch plus S Pen), and one save follows the player across devices.
+- **Graphics:** "Performance" and "Quality" profiles in the menu, Auto picks Performance on touch-first devices. Frame cap, resolution cap, MSAA, shadows, bloom size, particles, idle slow-down, nothing rendered in a hidden tab.
+- **Touch:** drag pans, pinch zooms, twist rotates, tap places or selects, long-press inspects. Right-edge rail (rotate, zoom, copy, next problem, Core) and a red Cancel pill. UI scales to fit 1280×800 CSS px with finger-sized targets.
+- **Cloud save:** Google Sheet plus Apps Script web app (`tools/apps-script/`), personal sync code, gzip, chunked rows, `text/plain` POSTs. Built so E8 can add telemetry and scores as new ops.
+- Hotspots: hud, game (small hook lines only). Size: M–L.
 
 ## E3 Market and models
 Goal: colony demand that keeps growing and pays for compute; training creates models that earn money and then age.
@@ -78,8 +78,8 @@ Goal: replayability through different rules, not just different seeds.
 ## E8 Telemetry and friends score sheet
 Goal: when the owner and friends play online, runs are logged so the game can be improved; friends compare scores.
 - **Design:** two options for the data shape (one row per event vs. one row per run with a JSON summary), pick one. Opt-in dialog mockup.
-- **Build:** a local run log (export as JSON); Google Sheet plus an Apps Script web app (script stored in `tools/apps-script/`); batched, anonymous uploads (random player id, no personal data); opt-in on first start; a score submit at run end and a leaderboard view.
-- **Owner steps (website only):** create the Sheet, paste the script, deploy it as a web app, paste the URL into a GitHub secret or config. The WP writes exact click-by-click steps.
+- **Build:** a local run log (export as JSON); batched, anonymous uploads (random player id, no personal data) through the E2 Apps Script (`tools/apps-script/Code.gs`: add `telemetry` and `score` ops and tabs, the owner redeploys a new version); opt-in on first start; a score submit at run end and a leaderboard view.
+- **Owner steps (website only):** paste the updated script and deploy a new version (the Sheet and URL from E2 stay). The WP writes exact click-by-click steps.
 - Hotspots: hud (one hook). Size: M.
 
 ## E9 Launch readiness

@@ -6,17 +6,28 @@ import fs from 'node:fs';
 const scenario = process.argv[2] ?? 'era1';
 const url = process.argv[3] ?? 'http://localhost:5173/';
 const channel = fs.existsSync('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe') ? 'msedge' : 'chrome';
+// Linux cloud containers: bundled Chromium with software WebGL (slow, but fine for relative profile comparisons)
+const linuxChromium = '/opt/pw-browsers/chromium';
+const local = process.platform === 'linux' && fs.existsSync(linuxChromium);
+// GFX=performance|quality picks the graphics profile; TABLET=1 emulates an 11-inch tablet (1280×800, DPR 2, touch)
+const gfx = process.env.GFX;
+const tablet = !!process.env.TABLET;
 
-const browser = await chromium.launch({ channel, headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
-const page = await browser.newPage({ viewport: { width: 1920, height: 1080 } });
+const browser = await chromium.launch(local
+  ? { executablePath: linuxChromium, headless: true, args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--autoplay-policy=no-user-gesture-required'] }
+  : { channel, headless: true, args: ['--use-angle=d3d11', '--enable-gpu', '--ignore-gpu-blocklist', '--autoplay-policy=no-user-gesture-required'] });
+const page = await browser.newPage(tablet ? { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true } : { viewport: { width: 1920, height: 1080 } });
 const errors: string[] = [];
 page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 page.on('pageerror', (e) => errors.push(String(e)));
 await page.addInitScript('window.__name = (f) => f;');
-await page.goto(url);
-await page.waitForFunction(() => (window as any).__sd);
+await page.goto(url, { timeout: 120000 });
+await page.waitForFunction(() => (window as any).__sd, null, { timeout: 120000 });
+// benchmarks measure the cost of every frame, so the profile's frame cap is lifted (fpsCap 0)
+if (gfx) await page.evaluate((gfx) => { const g = (window as any).__sd; g.quality.setChoice(gfx); g.quality.setFpsCap(0); }, gfx);
 const out: Record<string, unknown> = {};
-const shot = async (name: string) => { await page.screenshot({ path: `screenshots/${name}.png` }); console.log('saved', name); };
+const shotDir = process.env.SHOTDIR ?? 'screenshots';
+const shot = async (name: string) => { if (process.env.NOSHOT) return; await page.screenshot({ path: `${shotDir}/${name}.png`, timeout: 180000 }); console.log('saved', name); };
 
 // helper in page: start campaign, run autoplayer for N sim seconds, set camera/time
 await page.evaluate(async () => {
@@ -77,16 +88,17 @@ if (scenario === 'stress') {
   await page.evaluate(() => { const g = (window as any).__sd; g.paused = false; g.speed = 1; });
   await page.evaluate(() => (window as any).__h.frames(30));
   await shot('stress_night');
-  out.bench = await page.evaluate(async () => {
+  out.bench = await page.evaluate(async (N) => {
     const g = (window as any).__sd;
     g.paused = false; g.speed = 1; g.settings.showFps = true; g.applySettings();
     const t: number[] = [];
     const cpu: number[] = [];
-    await new Promise<void>((res) => { let n = 0; const w = () => { if (++n < 90) requestAnimationFrame(w); else res(); }; requestAnimationFrame(w); }); // warm-up (shader compiles)
-    await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); cpu.push(g.frameMs); last = now; if (++n < 300) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
+    await new Promise<void>((res) => { let n = 0; const w = () => { if (++n < Math.min(90, N / 3)) requestAnimationFrame(w); else res(); }; requestAnimationFrame(w); }); // warm-up (shader compiles)
+    await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); cpu.push(g.frameMs); last = now; if (++n < N) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
     t.sort((a, b) => a - b);
-    return { buildings: g.s.buildings.length, links: g.s.links.length, medianMs: t[150].toFixed(2), p95Ms: t[285].toFixed(2), fpsMedian: (1000 / t[150]).toFixed(0), cpuMs: g.frameMs.toFixed(2) };
-  });
+    const at = (q: number) => t[Math.floor(t.length * q)];
+    return { profile: g.quality.profile, dpr: g.rig.renderer.getPixelRatio(), msaa: g.rig.composer.renderTarget1.samples, shadow: g.rig.sun.shadow.mapSize.x, buildings: g.s.buildings.length, links: g.s.links.length, medianMs: at(0.5).toFixed(2), p95Ms: at(0.95).toFixed(2), fpsMedian: (1000 / at(0.5)).toFixed(0), cpuMs: g.frameMs.toFixed(2) };
+  }, Number(process.env.FRAMES ?? 300));
   if (process.env.PROFILE) {
     out.profile = await page.evaluate(async () => {
       const g = (window as any).__sd;
@@ -179,13 +191,13 @@ if (scenario === 'stress') {
     await shot('era5_finale_aurora');
   }
   // benchmark: real frame timing over 3s of rendering
-  out.bench = await page.evaluate(async () => {
+  out.bench = await page.evaluate(async (N) => {
     const g = (window as any).__sd;
     g.paused = false; g.speed = 1;
     const t: number[] = [];
     await new Promise<void>((res) => { let last = performance.now(); let n = 0; const f = () => { const now = performance.now(); t.push(now - last); last = now; if (++n < 180) requestAnimationFrame(f); else res(); }; requestAnimationFrame(f); });
     t.sort((a, b) => a - b);
-    return { buildings: g.s.buildings.length, links: g.s.links.length, medianMs: t[90].toFixed(2), p95Ms: t[171].toFixed(2), cpuMs: g.frameMs.toFixed(2), draws: g.rig.renderer.info.render.calls, tris: g.rig.renderer.info.render.triangles };
+    return { profile: g.quality.profile, dpr: g.rig.renderer.getPixelRatio(), msaa: g.rig.composer.renderTarget1.samples, shadow: g.rig.sun.shadow.mapSize.x, buildings: g.s.buildings.length, links: g.s.links.length, medianMs: t[90].toFixed(2), p95Ms: t[171].toFixed(2), cpuMs: g.frameMs.toFixed(2), draws: g.rig.renderer.info.render.calls, tris: g.rig.renderer.info.render.triangles };
   });
   out.state = await page.evaluate(() => { const g = (window as any).__sd; return { era: g.s.era, time: Math.round(g.s.time) }; });
 }
