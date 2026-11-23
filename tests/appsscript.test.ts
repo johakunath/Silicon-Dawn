@@ -24,11 +24,12 @@ function loadScript() {
     insertSheet: (n: string) => { sheets.set(n, []); return fakeSheet(n); },
   }) };
   const ContentService = { MimeType: { JSON: 'json' }, createTextOutput: (t: string) => ({ text: t, setMimeType() { return this; } }) };
-  const LockService = { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) };
+  const lock = { held: 0, taken: 0 };
+  const LockService = { getScriptLock: () => ({ waitLock() { lock.held++; lock.taken++; }, releaseLock() { lock.held--; } }) };
   const src = fs.readFileSync('tools/apps-script/Code.gs', 'utf8');
   const api = new Function('SpreadsheetApp', 'ContentService', 'LockService', `${src}; return { doPost, doGet, CHUNK };`)(SpreadsheetApp, ContentService, LockService);
   const post = (body: unknown) => JSON.parse(api.doPost({ postData: { contents: JSON.stringify(body) } }).text);
-  return { post, sheets, api };
+  return { post, sheets, api, lock };
 }
 
 describe('Apps Script backend', () => {
@@ -57,6 +58,27 @@ describe('Apps Script backend', () => {
     expect(post({ op: 'load', code }).data).toBe('short');
     expect(post({ op: 'load', code: other }).data).toBe('theirs');
     expect(sheets.get('saves')!.length).toBe(3); // header + one row each
+  });
+
+  it('conditional uploads refuse to replace a save they have not seen', () => {
+    const { post } = loadScript();
+    expect(post({ op: 'save', code, data: 'first', ifSavedAt: '' }).ok).toBe(true); // empty cloud: allowed
+    const seen = post({ op: 'info', code }).savedAt;
+    expect(post({ op: 'save', code, data: 'other', ifSavedAt: '' })).toMatchObject({ ok: false, conflict: true });
+    expect(post({ op: 'save', code, data: 'stale', ifSavedAt: 'not-the-current-one' })).toMatchObject({ ok: false, conflict: true });
+    expect(post({ op: 'load', code }).data).toBe('first');
+    expect(post({ op: 'save', code, data: 'next', ifSavedAt: seen }).ok).toBe(true);
+    expect(post({ op: 'load', code }).data).toBe('next');
+  });
+
+  it('reads take the same lock as writes', () => {
+    const { post, lock } = loadScript();
+    post({ op: 'save', code, data: 'x' });
+    const before = lock.taken;
+    post({ op: 'load', code });
+    post({ op: 'info', code });
+    expect(lock.taken).toBe(before + 2);
+    expect(lock.held).toBe(0);
   });
 
   it('rejects bad codes, unknown ops and empty saves; unknown code is simply not found', () => {

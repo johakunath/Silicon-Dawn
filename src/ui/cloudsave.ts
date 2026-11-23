@@ -60,6 +60,11 @@ export function autoUploadAllowed(local: CloudMeta, cloud: CloudInfo | null): bo
   return (m.min ?? 0) <= local.min;
 }
 
+/** Content fingerprint of a save, ignoring the save timestamp: changes on any build, link or tick, also while paused. */
+export function saveSig(json: string): string {
+  return json.replace(/"savedAt":"[^"]*"/, '');
+}
+
 function b64(bytes: Uint8Array): string {
   let s = '';
   for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
@@ -94,7 +99,7 @@ export class CloudSave {
   last: CloudInfo | null = null;
   lastError = '';
   private lastAuto = Date.now();
-  private lastAutoTime = -1;
+  private lastSig = '';
 
   constructor(private g: Game) {
     // auto upload: every 5 minutes of play, and when the tab is hidden (app switch on a tablet)
@@ -130,15 +135,16 @@ export class CloudSave {
     return this.last;
   }
 
-  async upload(keepalive = false): Promise<CloudInfo> {
+  /** ifSavedAt: replace only if the cloud still holds this save ('' = only if empty); omit to overwrite */
+  async upload(keepalive = false, ifSavedAt?: string): Promise<CloudInfo> {
     const json = this.g.saveJson();
     const meta = summarize(json, this.device());
     const { enc, data } = await encodeSave(json);
     if (keepalive && data.length > KEEPALIVE_LIMIT) throw new Error('too large for a background upload');
-    const r = await this.call({ op: 'save', enc, data, meta }, keepalive);
+    const r = await this.call({ op: 'save', enc, data, meta, ...(ifSavedAt !== undefined ? { ifSavedAt } : {}) }, keepalive);
     this.last = { found: true, savedAt: r.savedAt, meta };
     this.lastAuto = Date.now();
-    this.lastAutoTime = this.g.s.time;
+    this.lastSig = saveSig(json);
     return this.last;
   }
 
@@ -153,15 +159,17 @@ export class CloudSave {
 
   private async autoUpload(leaving: boolean) {
     if (!this.cfg.auto || !this.ready() || this.busy || !this.g.started) return;
-    if (this.g.s.time === this.lastAutoTime) return; // nothing new since the last upload
+    const json = this.g.saveJson();
+    if (saveSig(json) === this.lastSig) return; // nothing changed since the last upload
     this.busy = true;
     try {
-      const local = summarize(this.g.saveJson(), this.device());
+      const local = summarize(json, this.device());
       // when leaving there is no time for a check round-trip; rely on the last known cloud state
       if (leaving && !this.last) return;
       const cloud = leaving ? this.last : await this.info();
       if (!autoUploadAllowed(local, cloud)) { this.lastAuto = Date.now(); return; }
-      await this.upload(leaving);
+      // the server re-checks atomically that the cloud still holds what we saw (another device may have uploaded since)
+      await this.upload(leaving, cloud?.found ? cloud.savedAt ?? '' : '');
       this.lastError = '';
     } catch (e) {
       this.lastError = (e as Error).message;

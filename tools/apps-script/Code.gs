@@ -95,6 +95,12 @@ function opSave(req) {
   try {
     var sh = sheet(TABS.saves, SAVE_HEADER);
     var old = findRows(sh, req.code, slot);
+    // conditional upload (auto uploads): only replace the save the client last saw, so a
+    // device with stale knowledge can never overwrite newer progress from another device
+    if (req.ifSavedAt !== undefined && req.ifSavedAt !== null) {
+      var current = old.length ? String(sh.getRange(old[0].row, 5).getValue()) : '';
+      if (current !== String(req.ifSavedAt)) return { ok: false, conflict: true, error: 'the cloud save changed on another device' };
+    }
     for (var j = old.length - 1; j >= 0; j--) sh.deleteRow(old[j].row);
     var rows = parts.map(function (p, k) { return [req.code, slot, String(k), String(parts.length), savedAt, meta, enc, p]; });
     var start = sh.getLastRow() + 1;
@@ -107,6 +113,17 @@ function opSave(req) {
 
 function readSave(req, withData) {
   var slot = checkCode(req);
+  // same lock as opSave: row positions must not shift between lookup and read
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return readSaveLocked(req, slot, withData);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function readSaveLocked(req, slot, withData) {
   var sh = sheet(TABS.saves, SAVE_HEADER);
   var rows = findRows(sh, req.code, slot);
   if (!rows.length) return { ok: true, found: false };

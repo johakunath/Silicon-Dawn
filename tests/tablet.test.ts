@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PROFILES, autoProfile, frameDue, resolveProfile, targetFps } from '../src/render/quality';
 import { angleDelta, twoFinger } from '../src/game/touch';
 import { cancelLabel } from '../src/ui/touchbar';
-import { CODE_ALPHABET, autoUploadAllowed, codeFromBytes, decodeSave, encodeSave, normalizeCode, summarize, validUrl } from '../src/ui/cloudsave';
+import { CODE_ALPHABET, autoUploadAllowed, codeFromBytes, decodeSave, encodeSave, normalizeCode, saveSig, summarize, validUrl } from '../src/ui/cloudsave';
 
 describe('quality profiles', () => {
   it('auto picks Performance on touch-first devices and Quality with a mouse', () => {
@@ -86,6 +86,14 @@ describe('cloud save', () => {
     expect(data.length).toBeLessThan(json.length / 4);
     expect(await decodeSave(enc, data)).toBe(json);
     expect(await decodeSave('raw', json)).toBe(json);
+  });
+
+  it('save fingerprint ignores only the timestamp', () => {
+    const a = JSON.stringify({ era: 1, buildings: [1], savedAt: '2026-11-23T10:00:00.000Z' });
+    const b = JSON.stringify({ era: 1, buildings: [1], savedAt: '2026-11-23T11:00:00.000Z' });
+    const c = JSON.stringify({ era: 1, buildings: [1, 2], savedAt: '2026-11-23T11:00:00.000Z' });
+    expect(saveSig(a)).toBe(saveSig(b));
+    expect(saveSig(a)).not.toBe(saveSig(c)); // a build while paused still counts as a change
   });
 
   it('auto upload never overwrites a further-along or different run', () => {
