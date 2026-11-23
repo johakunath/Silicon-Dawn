@@ -15,8 +15,9 @@ const KEEPALIVE_LIMIT = 60000; // browsers cap keepalive request bodies at 64 KB
 export interface CloudConfig { url: string; code: string; auto: boolean }
 /** time = exact simulated seconds (guard); min = rounded, display only; runId = random id of one campaign across devices */
 export interface CloudMeta { era: number; min: number; time: number; seed: number; mode: string; difficulty: string; device: string; runId?: string }
-const RUN_KEY = 'sd_cloud_run_v1';
-interface RunBinding { runId: string; seed: number; mode: string; difficulty: string; time: number }
+const RUN_KEY = 'sd_cloud_autosave_run_v1';
+/** which cloud run the autosave in local storage belongs to (sig = fingerprint of that exact autosave) */
+export interface AutosaveTag { runId: string; sig: string }
 export interface CloudInfo { found: boolean; savedAt?: string; meta?: Partial<CloudMeta> }
 
 /** 12 random symbols as XXXX-XXXX-XXXX (60 bits). */
@@ -67,13 +68,12 @@ export function autoUploadAllowed(local: CloudMeta, cloud: CloudInfo | null): bo
 }
 
 /**
- * Which cloud run a local game continues. Games uploaded or downloaded in this tab are known directly.
- * After a reload (Continue from autosave) the game is matched to the run this device last synced, but
- * only if seed, mode and difficulty agree and it is not behind that sync (a fresh campaign starts at 0).
+ * Which cloud run a loaded game continues. Only a game loaded from the very autosave this device wrote
+ * while that game was bound to a run keeps the run (Continue after a reload). New games, local slots and
+ * imports start unbound: their first upload needs a manual, confirmed replace if the cloud holds a game.
  */
-export function adoptRun(b: RunBinding | null, local: CloudMeta): string | undefined {
-  if (!b) return undefined;
-  return b.seed === local.seed && b.mode === local.mode && b.difficulty === local.difficulty && local.time >= b.time ? b.runId : undefined;
+export function runFromTag(tag: AutosaveTag | null, loadedJson: string): string | undefined {
+  return tag && tag.sig === saveSig(loadedJson) ? tag.runId : undefined;
 }
 
 export function newRunId(): string {
@@ -175,22 +175,23 @@ export class CloudSave {
 
   private runs = new WeakMap<object, string>();
   /** the cloud run a game state belongs to, if known */
-  runFor(state: object, local: CloudMeta): string | undefined {
-    let r = this.runs.get(state);
-    if (!r && state === this.g.s) {
-      let b: RunBinding | null = null;
-      try { b = JSON.parse(localStorage.getItem(RUN_KEY) ?? 'null'); } catch { /* */ }
-      r = adoptRun(b, local);
-      if (r) this.runs.set(state, r);
-    }
-    return r;
+  runFor(state: object, _local?: CloudMeta): string | undefined { return this.runs.get(state); }
+  /** this game state is (now) that cloud run */
+  bind(state: object, meta: Partial<CloudMeta>) { if (meta.runId) this.runs.set(state, meta.runId); }
+  /** hook from Game.autosave: tag the autosave with the run of the game it holds (or clear the tag) */
+  onAutosaved(state: object, json: string) {
+    const r = this.runs.get(state);
+    try {
+      if (r) localStorage.setItem(RUN_KEY, JSON.stringify({ runId: r, sig: saveSig(json) } satisfies AutosaveTag));
+      else localStorage.removeItem(RUN_KEY);
+    } catch { /* */ }
   }
-  /** remember that this game state is (now) that cloud run, also across reloads */
-  bind(state: object, meta: Partial<CloudMeta>) {
-    if (!meta.runId) return;
-    this.runs.set(state, meta.runId);
-    const b: RunBinding = { runId: meta.runId, seed: Number(meta.seed), mode: String(meta.mode), difficulty: String(meta.difficulty), time: Number(meta.time) || 0 };
-    try { localStorage.setItem(RUN_KEY, JSON.stringify(b)); } catch { /* */ }
+  /** hook from Game.loadJson: a game loaded from our own tagged autosave keeps its run */
+  onLoaded(state: object, json: string) {
+    let tag: AutosaveTag | null = null;
+    try { tag = JSON.parse(localStorage.getItem(RUN_KEY) ?? 'null'); } catch { /* */ }
+    const r = runFromTag(tag, json);
+    if (r) this.runs.set(state, r);
   }
 
   /** the cloud save as a JSON string (does not load it) */

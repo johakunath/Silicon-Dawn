@@ -171,6 +171,7 @@ export class Game {
       this.hud.tutorial.cancel();
       this.hud.onNewState();
       this.hud.refreshSpeed();
+      this.cloud.onLoaded(s, json); // Continue from our own autosave keeps its cloud run
       this.hud.toast('Game loaded', 'good');
       return true;
     } catch (e) {
@@ -185,7 +186,9 @@ export class Game {
   autosave() {
     if (!this.started) return;
     try {
-      localStorage.setItem(AUTOSAVE_KEY, this.saveJson());
+      const json = this.saveJson();
+      localStorage.setItem(AUTOSAVE_KEY, json);
+      this.cloud.onAutosaved(this.s, json); // remembers which cloud run this autosave belongs to
       this.saveWarned = false;
     } catch {
       // storage full or blocked (private mode): tell the player once, so progress isn't silently lost

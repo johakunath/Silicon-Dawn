@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PROFILES, autoProfile, frameDue, resolveProfile, targetFps } from '../src/render/quality';
 import { angleDelta, twoFinger } from '../src/game/touch';
 import { cancelLabel } from '../src/ui/touchbar';
-import { CODE_ALPHABET, adoptRun, autoUploadAllowed, codeFromBytes, decodeSave, encodeSave, normalizeCode, saveSig, summarize, validUrl } from '../src/ui/cloudsave';
+import { CODE_ALPHABET, autoUploadAllowed, codeFromBytes, decodeSave, encodeSave, normalizeCode, runFromTag, saveSig, summarize, validUrl } from '../src/ui/cloudsave';
 
 describe('quality profiles', () => {
   it('auto picks Performance on touch-first devices and Quality with a mouse', () => {
@@ -110,13 +110,11 @@ describe('cloud save', () => {
     expect(autoUploadAllowed(local, cloud({ seed: 9 }))).toBe(false);
   });
 
-  it('a reloaded game adopts the synced run only if it continues it', () => {
-    const b = { runId: 'r1', seed: 5, mode: 'campaign', difficulty: 'standard', time: 1800 };
-    const m = (time: number, difficulty = 'standard') => summarize(JSON.stringify({ era: 1, time, seed: 5, mode: 'campaign', difficulty }), 'Tablet');
-    expect(adoptRun(b, m(1900))).toBe('r1');
-    expect(adoptRun(b, m(0))).toBeUndefined(); // a fresh campaign on the same seed
-    expect(adoptRun(b, m(1900, 'race'))).toBeUndefined();
-    expect(adoptRun(null, m(1900))).toBeUndefined();
-    expect(summarize('not json', 'Tablet').era).toBe(0);
+  it('only a game loaded from its own tagged autosave keeps its cloud run', () => {
+    const auto = JSON.stringify({ era: 1, time: 1900, seed: 5, savedAt: '2026-11-23T10:00:00.000Z' });
+    const tag = { runId: 'r1', sig: saveSig(auto) };
+    expect(runFromTag(tag, auto)).toBe('r1'); // Continue after a reload
+    expect(runFromTag(tag, JSON.stringify({ era: 1, time: 1900, seed: 5, savedAt: 'x', buildings: [1] }))).toBeUndefined(); // another save, same seed
+    expect(runFromTag(null, auto)).toBeUndefined();
   });
 });
