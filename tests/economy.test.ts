@@ -285,7 +285,7 @@ describe('save v3', () => {
     const v3 = JSON.parse(saveToString(createState(SEED)));
     const v2: any = { ...v3, version: 2, era: 3 };
     delete v2.econ;
-    expect(migrate(v2).version).toBe(3);
+    expect(migrate(v2).version).toBe(4);
     const s = loadFromObject(v2);
     expect(s.econ.credits).toBe(migrationCredits(3));
     expect(s.econ.sell.metal).toBe(true);

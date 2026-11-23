@@ -28,7 +28,7 @@ export function coinIcon(size = 18): string {
 }
 
 const INCOME_NAME: Record<IncomeLine, string> = {
-  contracts: 'Contracts', exports: 'Exports', power_sold: 'Power sold', funding: 'Funding rounds', stipend: 'Core stipend', grants: 'Emergency grants',
+  market: 'Colony market', contracts: 'Special orders', exports: 'Exports', power_sold: 'Power sold', funding: 'Funding rounds', stipend: 'Core stipend', grants: 'Emergency grants',
 };
 const COST_NAME: Record<CostLine, string> = {
   fuel: 'Gas fuel', upkeep: 'Upkeep', power_bought: 'Power bought', water: 'Water', interest: 'Debt interest',
@@ -71,7 +71,7 @@ function costCentre(d: BuildingDef): string {
   if (d.node) return 'carries the grid';
   if (d.cat === 'cooling') return 'part of the cost of compute';
   if (d.workload === 'research') return 'pays in research';
-  if (d.workload) return 'earns through contracts';
+  if (d.workload) return 'earns through the colony market';
   if (d.storage || d.junction) return 'logistics';
   if (d.hub) return 'makes others faster';
   return 'supports other buildings';

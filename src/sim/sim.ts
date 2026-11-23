@@ -11,8 +11,11 @@ import type { Building, BuildingDef, Contract, ItemId, Link } from './types';
 import { LINKS } from './data/items';
 import { GRANT_SCORE_MUL } from './data/economy';
 import { contractCredits, earnContract, econSecond, econTick, fundEra } from './economy';
+import { marketSecond, marketTrain } from './market';
 
 export const ENGINE_TARGET = 160000;
+/** Seconds between special orders (plus up to 120 s): the colony market is the main income, orders are one-off jobs. */
+export const SPECIAL_ORDER_GAP = 220;
 /** the stockpile never ships below this, so construction always has material */
 export const STORAGE_RESERVE = 40;
 export const STORAGE_RESERVE_MAX = 120;
@@ -256,7 +259,7 @@ export function step(s: GameState) {
   for (const b of B) if (BUILDING[b.type].gen === 'firm' && b.grid >= 0) { const g = G[b.grid]; const share = firmCap[b.grid] > 0 ? Math.min(1, (g.gen - Math.min(varGen[b.grid], g.demand)) / firmCap[b.grid]) : 0; if (b.type === 'gas') b.activity = m.firmOff ? 0 : share; else b.activity = share; b.pw = -BUILDING[b.type].power * b.activity; }
 
   // ── pass B: production ──
-  let computeProduced = 0, itPower = 0, facPower = 0, trainEff = 0, served = 0;
+  let computeProduced = 0, itPower = 0, facPower = 0, trainEff = 0, trainFiber = 0, served = 0;
   const water0 = s.stats.produced.water ?? 0;
   const shortage = m.chips;
   for (let i = 0; i < B.length; i++) {
@@ -333,6 +336,7 @@ export function step(s: GameState) {
         case 'training': {
           const t = (b.rxT * sat) * (0.5 + 0.5 * fiberFrac);
           trainEff += t;
+          trainFiber += t * fiberFrac;
           break;
         }
         case 'engine': {
@@ -561,10 +565,13 @@ export function step(s: GameState) {
 
   // ── trainer contracts get training ──
   for (const c of s.contracts) if (c.state === 'active' && c.kind === 'training') c.progress += trainEff;
+  // ── the current training run gets it too (a special order borrows the same cluster) ──
+  marketTrain(s, trainEff, trainFiber);
 
   if (s.tick % 10 === 0) {
     tickEvents(s, 1);
     tickContracts(s, 1);
+    marketSecond(s);
     econSecond(s);
     checkObjectives(s);
   }
@@ -644,8 +651,8 @@ function tickContracts(s: GameState, dt: number) {
     c.reward.credits = contractCredits(c.kind, c.target, c.kind === 'inference' ? 120 : 0);
     s.contracts.push(c);
     signal(s, 'contract_offer');
-    pushFeed(s, `New contract offered: ${c.title}`, 'info');
-    s.nextContractAt = s.time + 110 + s.rng.range(0, 60);
+    pushFeed(s, `New special order: ${c.title}`, 'info');
+    s.nextContractAt = s.time + SPECIAL_ORDER_GAP + s.rng.range(0, 120);
   }
 }
 
@@ -658,10 +665,10 @@ function finishContract(s: GameState, c: Contract, ok: boolean) {
     if (credits > 0) earnContract(s, credits);
     s.stats.contractsDone++;
     s.stats.eraContractsDone++;
-    pushFeed(s, `✓ Contract complete: ${c.title} (+${credits ? credits + ' credits, ' : ''}${c.reward.rp} research)`, 'good');
+    pushFeed(s, `✓ Special order complete: ${c.title} (+${credits ? credits + ' credits, ' : ''}${c.reward.rp} research)`, 'good');
     signal(s, 'contract_done');
   } else {
-    pushFeed(s, `✕ Contract failed: ${c.title}`, 'bad');
+    pushFeed(s, `✕ Special order failed: ${c.title}`, 'bad');
     signal(s, 'contract_fail');
   }
 }

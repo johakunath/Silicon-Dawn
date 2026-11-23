@@ -81,7 +81,7 @@ export const STIPEND = 0.5;
 /** Starting balance per difficulty. */
 export const START_CREDITS: Record<Difficulty, number> = { relaxed: 700, standard: 500, race: 400 };
 /** Funding round paid when an era starts: investors finance the next build-out. Revenue has to justify it later. */
-export const FUNDING: Record<number, number> = { 2: 800, 3: 3500, 4: 6000, 5: 5000 };
+export const FUNDING: Record<number, number> = { 2: 800, 3: 4500, 4: 6000, 5: 5000 };
 export const SANDBOX_CREDITS = 100000;
 
 /** Demolish within this many seconds of building: full credit refund. Later: REFUND_LATE of the credits. Materials always 100%. */
