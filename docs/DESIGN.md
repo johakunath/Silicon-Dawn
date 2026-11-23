@@ -86,6 +86,12 @@ Severity scales with difficulty.
 - Friends see a score sheet per scenario. Telemetry is **opt-in** on first start, because friends will play too.
 - Must be live before the owner's first full play.
 
+**Built in E8.** Client in `src/ui/telemetry.ts`, score rule in `src/sim/score.ts`, backend ops in `tools/apps-script/Code.gs` (version 2).
+- Opt-in card before the first game (Share anonymously / No thanks, keep it local); Menu row to change it; nothing leaves the device without "yes" and a script URL.
+- Data shape: one row per run in the `telemetry` tab, replaced on every upload (every 2 minutes of play with changes, on an era change, at the finish, and when the tab is hidden), with headline columns plus a JSON summary (era times and grades, money lines, a sample per minute, up to 300 events).
+- Local run log: the last 5 runs in local storage, exported as JSON from the Menu.
+- Score = average era rating × 10,000 − 20 per minute over the campaign par (138 min). Submitted from the finale with a typed name (16 characters); the score sheet shows the top 20 per difficulty, best first, ties by time.
+
 ## Decision log
 | Date | Decision | Why |
 |---|---|---|
@@ -102,6 +108,10 @@ Severity scales with difficulty.
 | 2026-11-23 | E1 economy model A "credits on top of materials" over B "credits replace materials" | A keeps the logistics game (pillars 1, 2) and adds money as a second constraint, which mirrors real capex (bill of materials plus installation). B would make belts pointless for construction. Risk of two currencies is handled by automatic exports above a keep level. |
 | 2026-11-23 | Funding round at each era start | Without it the autoplayer needed 2–3× longer per era. It also teaches the real pattern: AI build-outs are financed before they earn. |
 | 2026-11-23 | Power is bought and sold only through the Command Core (grid tie) | Own generators have no marginal cost, so a time-of-day price only means something at the tie. Grid import deals and curtailment payments stay in E4. |
+| 2026-11-23 | E8 opt-in as one card before the first game (A) over a banner during play (B) | A is a clear, equal choice made once; B is easy to miss and competes with the tutorial. "No" is a full answer, not a nag |
+| 2026-11-23 | E8 data shape: one row per run, updated in place, with a JSON summary (A) over one row per event (B) | A keeps the Sheet small and readable for the owner (a few rows per friend), fits Apps Script limits, and still carries the events inside the summary. B would grow by thousands of rows per run |
+| 2026-11-23 | Battery charge as a glowing level on the cells instead of a floating 2D gauge | The owner asked for the level on the building itself; it reads at any zoom and keeps the view clean |
+| 2026-11-23 | Ledger per-building table option A "compact live table with in-cell charts" over B "treemap tiles" | A keeps every number visible and sortable (Excel-like) and adds bars, use dots, a net band, a 3-minute trend line and payback pills; B is playful but hides numbers behind hover |
 | 2026-11-23 | E4 maintenance model A "wear meter plus breakdowns that climb with wear" over B "random breakdowns scaled by heat only" | A is readable (wear shows in the inspector, the U overlay and a badge before anything breaks) and teaches the real failure curve and preventive maintenance. B would feel like bad luck. A Service Center takes care of covered machines on its own, so there is no repair chore |
 | 2026-11-23 | E4 coverage visual A "Service overlay on U, like Power and Heat" over B "always-on wear rings on every building" | Rings on 200 buildings clutter the view and a tablet screen; an on-demand overlay matches the existing P/H/N/O pattern, and worn machines still get a badge when it matters (80%+) |
 | 2026-11-23 | E4 power deals as three cards in the ledger; hardware tiers only for pods | The ledger already holds the power price; deals are money decisions. One new pod generation teaches "newer is more work per watt" without forcing replacements (decision on tedium) |

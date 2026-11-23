@@ -30,6 +30,11 @@ import { Ledger, affordable, cr, creditCostHtml } from './ledger';
 import { MarketPanel } from './market';
 import { deployedModel, share } from '../sim/market';
 import { breakChance, wearRate } from '../sim/operations';
+import { Telemetry, cleanName } from './telemetry';
+import type { ScoreRow } from './telemetry';
+import { DEFAULT_CLOUD_URL, validUrl } from './cloudsave';
+import { campaignScore, campaignPar, gradeLine } from '../sim/score';
+import { version as GAME_VERSION } from '../../package.json';
 
 const h = (tag: string, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 const fmt = (v: number) => (Math.abs(v) >= 10000 ? (v / 1000).toFixed(1) + 'k' : Math.abs(v) >= 100 ? Math.round(v).toString() : Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1));
@@ -68,6 +73,8 @@ export class Hud {
   rates = new RateTracker();
   ledger = new Ledger();
   market = new MarketPanel();
+  /** opt-in telemetry, local run log and the friends score sheet (uses the cloud-save script URL) */
+  telemetry = new Telemetry(() => { const u = this.g.cloud?.cfg.url ?? ''; return validUrl(u) ? u : DEFAULT_CLOUD_URL; }, GAME_VERSION);
   tutorial!: Tutorial;
   hoveredPaletteType: string | null = null;
   private codexCh = 'start';
@@ -187,7 +194,7 @@ export class Hud {
     add('fps', h('div'));
     add('banner', h('div'));
     // modals
-    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger', 'market']) {
+    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger', 'market', 'consent', 'scores']) {
       const m = add(id, h('div', 'modal'));
       m.addEventListener('pointerdown', (e) => { if (e.target === m && id !== 'title' && id !== 'finale') this.closeModals(); });
     }
@@ -319,6 +326,7 @@ export class Hud {
   update(dt: number) {
     const g = this.g, s = g.s;
     this.slowT += dt;
+    if (g.started) this.telemetry.observe(s);
     // feed → toasts
     if (s.feed.length < this.seenFeed) this.seenFeed = 0;
     while (this.seenFeed < s.feed.length) {
@@ -707,7 +715,7 @@ export class Hud {
   blockingModal() { return this.openModal !== null && this.openModal !== 'score'; }
   closeModals() {
     if (this.openModal === 'title') return;
-    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats', 'ledger', 'market']) this.els[id].classList.remove('show');
+    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats', 'ledger', 'market', 'consent', 'scores']) this.els[id].classList.remove('show');
     const was = this.openModal;
     if (was) audio.play('close');
     this.openModal = null;
@@ -715,7 +723,7 @@ export class Hud {
     if (was && !this.g.started) this.showTitle();
   }
   private show(id: string) {
-    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger', 'market']) this.els[m].classList.toggle('show', m === id);
+    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger', 'market', 'consent', 'scores']) this.els[m].classList.toggle('show', m === id);
     this.openModal = id;
     audio.play('open');
   }
@@ -868,8 +876,9 @@ export class Hud {
       <div class="setrow"><label>Edge panning</label><button id="s-edge" class="${st.edgePan ? 'on' : ''}">${st.edgePan ? 'ON' : 'OFF'}</button></div>
       <div class="setrow"><label>UI scale</label><input type="range" min="0.8" max="1.4" step="0.05" value="${st.uiScale}" id="s-ui"></div>
       ${graphicsRows(g)}
+      <div class="setrow"><label data-tip="Opt-in. A summary of each run (era times, money, stalls, breakdowns) goes to the game's Google Sheet under a random player id. No name, no email.">Anonymous run data</label><button id="s-tele" class="${this.telemetry.prefs.consent === 'yes' ? 'on' : ''}">${this.telemetry.prefs.consent === 'yes' ? (this.telemetry.sharing() ? 'SHARING' : 'ON (no cloud script yet)') : 'OFF'}</button><button id="s-log" data-tip="Download this device's last 5 run logs as JSON">RUN LOG (JSON)</button></div>
       <div class="setrow"><label>Performance stats</label><button id="s-fps" class="${st.showFps ? 'on' : ''}">${st.showFps ? 'SHOWN (F3)' : 'HIDDEN (F3)'}</button></div>
-      <div class="mact" style="justify-content:space-between"><div style="display:flex;gap:8px"><button id="m-save">SAVE / LOAD</button><button id="m-title">MAIN MENU</button></div><button class="primary" data-x>RESUME</button></div>
+      <div class="mact" style="justify-content:space-between"><div style="display:flex;gap:8px"><button id="m-save">SAVE / LOAD</button><button id="m-scores">SCORE SHEET</button><button id="m-title">MAIN MENU</button></div><button class="primary" data-x>RESUME</button></div>
       <div style="margin-top:18px;color:#93a4c4;font-size:15px;line-height:1.6"><b>Keys:</b> WASD pan · wheel zoom · Q/E rotate · 1–9 build · L link · X demolish · Del demolish selected · P/H/N/O/U overlays · T tech · K ledger · B market · J guide · Z next problem · C core · F focus · M pod mode · R repair · Space pause · +/− speed · F3 stats<br><b>Touch:</b> drag pan · pinch zoom · twist rotate · tap place or select · hold to inspect · right-edge buttons rotate, zoom, copy, next problem · red pill cancels</div></div>`;
     const q = (id: string) => m.querySelector(id) as HTMLInputElement;
     q('#s-vol').oninput = () => { st.volume = Number(q('#s-vol').value); g.applySettings(); };
@@ -881,6 +890,9 @@ export class Hud {
     q('#s-fps').onclick = () => { st.showFps = !st.showFps; g.applySettings(); this.openMenu(); };
     bindGraphics(m, g, () => this.openMenu());
     q('#m-save').onclick = () => this.openSave();
+    q('#m-scores').onclick = () => this.openScores();
+    q('#s-tele').onclick = () => { this.telemetry.setConsent(this.telemetry.prefs.consent === 'yes' ? 'no' : 'yes'); this.openMenu(); };
+    q('#s-log').onclick = () => this.telemetry.exportLogs();
     q('#m-title').onclick = () => { g.autosave(); this.showTitle(); };
     (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
     this.show('menu');
@@ -936,7 +948,48 @@ export class Hud {
     q('#t-sand').onclick = () => { this.closeTitle(); g.newGame(Number((q('#t-seed') as HTMLInputElement).value) || 1, 'standard', 'sandbox'); };
     this.show('title');
   }
-  private closeTitle() { this.els.title.classList.remove('show'); this.openModal = null; audio.init(); audio.play('era', 1); }
+  private closeTitle() {
+    this.els.title.classList.remove('show'); this.openModal = null; audio.init(); audio.play('era', 1);
+    if (this.telemetry.prefs.consent === null) this.openConsent();
+  }
+
+  /** Asked once, before the first game: share anonymous run summaries, or keep everything on this device. */
+  openConsent() {
+    const m = this.els.consent;
+    m.innerHTML = `<div class="mcard panel" style="width:760px"><h1>HELP IMPROVE SILICON DAWN?</h1>
+      <div class="lede">Share an anonymous summary of each run: era times, money, stalls, breakdowns, and when you stop playing. It helps balance the game.</div>
+      <div class="lede" style="font-size:16px">No name, no email, no account: only a random player id (<code>${this.telemetry.prefs.player}</code>). A copy stays on this device and <b>Menu → Run log</b> exports it. You can change your mind any time in the Menu.</div>
+      <div class="mact" style="justify-content:flex-start"><button class="primary" data-yes>SHARE ANONYMOUSLY</button><button data-no>NO THANKS, KEEP IT LOCAL</button></div></div>`;
+    (m.querySelector('[data-yes]') as HTMLElement).onclick = () => { this.telemetry.setConsent('yes'); this.closeModals(); this.toast('Thanks! Anonymous run summaries are on.', 'good'); };
+    (m.querySelector('[data-no]') as HTMLElement).onclick = () => { this.telemetry.setConsent('no'); this.closeModals(); };
+    this.show('consent');
+  }
+
+  /** Friends score sheet: top campaign scores per difficulty from the owner's Google Sheet. */
+  openScores(difficulty: string = this.g.s.difficulty) {
+    const m = this.els.scores;
+    const t = this.telemetry;
+    const tabs = (['relaxed', 'standard', 'race'] as const).map((d) => `<button data-d="${d}" class="${d === difficulty ? 'on' : ''}">${d.toUpperCase()}</button>`).join('');
+    const shell = (body: string) => `<div class="mcard panel" style="width:900px"><h1>FRIENDS SCORE SHEET</h1>
+      <div class="lede">Finished campaigns, best first. Score = average era rating × 10,000, minus 20 per minute over the campaign par (${Math.round(campaignPar())} min).</div>
+      <div class="mact" style="justify-content:flex-start;margin:0 0 10px">${tabs}</div>${body}
+      <div class="mact"><button class="primary" data-x>BACK</button></div></div>`;
+    const bind = () => {
+      m.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => { b.onclick = () => this.openScores(b.dataset.d!); });
+      (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
+    };
+    if (!t.scoresReady()) {
+      m.innerHTML = shell('<div class="dim">The score sheet needs the cloud script. Set it up once under Menu → Save / Load → Cloud save (steps in tools/apps-script/README.md).</div>');
+      bind(); this.show('scores'); return;
+    }
+    m.innerHTML = shell('<div class="dim">Loading…</div>');
+    bind(); this.show('scores');
+    t.scores(difficulty).then((rows) => {
+      if (this.openModal !== 'scores') return;
+      m.innerHTML = shell(scoreTable(rows));
+      bind();
+    }).catch((e) => { if (this.openModal === 'scores') { m.innerHTML = shell(`<div class="r">Could not load scores: ${String((e as Error).message ?? e).replace(/[<>&]/g, '')}</div>`); bind(); } });
+  }
 
   showEraBanner(era: number) {
     const e = ERAS[era - 1];
@@ -963,13 +1016,32 @@ export class Hud {
     try { localStorage.setItem('sd_sandbox_unlocked', '1'); } catch { /* */ }
     const m = this.els.finale;
     const rows = s.eraScores.map((e) => `<div class="c"><div class="v">${e.grade}</div><div class="l">${ERAS[e.era - 1].name}<br>${Math.round(e.time / 60)} min</div></div>`).join('');
-    m.innerHTML = `<div class="mcard panel" style="width:1000px;text-align:center"><h1 style="font-size:64px">THE DAWN ENGINE IGNITES</h1>
+    m.innerHTML = `<div class="mcard panel" style="width:1000px;text-align:center;max-height:94%;overflow-y:auto;box-sizing:border-box"><h1 style="font-size:64px">THE DAWN ENGINE IGNITES</h1>
       <div class="lede" style="margin:0 auto;font-size:20px;line-height:1.6">From one solar panel to a continent of light. Your civilisation has built the most elaborate machine in its history.<br><br><b>This ending is fiction.</b> Nobody knows of any amount of compute, power or silicon that guarantees general intelligence. What you actually mastered is real: energy that must be generated every second, heat that has to go somewhere, water, materials, networks, and reliability under stress.</div>
       <div class="score" style="grid-template-columns:repeat(${Math.max(1, s.eraScores.length)},1fr)">${rows}</div>
       <div class="lede" style="margin:0 auto">Total time: ${Math.round(s.time / 60)} minutes · ${s.buildings.length} buildings · ${s.market.shipped} models shipped · ${cr(s.econ.income.market)} earned on the colony market.<br><b style="color:#5dff9a">Sandbox mode is now unlocked</b> on the main menu.</div>
+      <div class="fscore"><div><div class="l">CAMPAIGN SCORE</div><div class="v">${campaignScore(s).toLocaleString('en-US')}</div><div class="dim">${gradeLine(s)} · ${Math.round(s.time / 60)} min (par ${Math.round(campaignPar())})</div></div>
+        ${s.mode === 'campaign' ? `<div class="fsub"><input id="f-name" maxlength="16" placeholder="Your name for the score sheet" value="${cleanName(this.telemetry.prefs.name).replace(/"/g, '')}"><button id="f-send">SUBMIT SCORE</button><button id="f-list">SCORE SHEET</button><div id="f-msg" class="dim"></div></div>` : ''}</div>
       <div class="mact" style="justify-content:center"><button data-k>KEEP WATCHING</button><button class="primary" data-t>MAIN MENU</button></div></div>`;
     (m.querySelector('[data-k]') as HTMLElement).onclick = () => { m.classList.remove('show'); this.openModal = null; };
+    const msg = m.querySelector('#f-msg') as HTMLElement | null;
+    (m.querySelector('#f-list') as HTMLElement | null)?.addEventListener('click', () => this.openScores(s.difficulty));
+    (m.querySelector('#f-send') as HTMLElement | null)?.addEventListener('click', () => {
+      if (!this.telemetry.scoresReady()) { msg!.textContent = 'The score sheet needs the cloud script (Menu → Save / Load → Cloud save).'; return; }
+      msg!.textContent = 'Sending…';
+      this.telemetry.submitScore(s, (m.querySelector('#f-name') as HTMLInputElement).value)
+        .then(() => { msg!.textContent = 'Submitted. Open the score sheet to see where you stand.'; })
+        .catch((e) => { msg!.textContent = `Not sent: ${String((e as Error).message ?? e)}`; });
+    });
     (m.querySelector('[data-t]') as HTMLElement).onclick = () => { m.classList.remove('show'); this.openModal = null; this.showTitle(); };
     setTimeout(() => { if (this.g.started && this.g.s === s) this.show('finale'); }, 9000);
   }
+}
+
+function scoreTable(rows: ScoreRow[]): string {
+  if (!rows.length) return '<div class="dim">No scores yet. Finish a campaign and submit yours from the final screen.</div>';
+  const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  const ago = (iso: string) => { const d = (Date.now() - Date.parse(iso)) / 86400000; return !Number.isFinite(d) ? '' : d < 1 ? 'today' : d < 2 ? 'yesterday' : `${Math.round(d)} days ago`; };
+  const medal = ['#ffd27a', '#c9d6ee', '#c9a27a'];
+  return `<table class="stab sheet"><tr><th>#</th><th>Name</th><th>Score</th><th>Time</th><th>Era grades</th><th>When</th></tr>${rows.map((r, i) => `<tr class="${r.mine ? 'mine' : ''}"><td style="color:${medal[i] ?? '#93a4c4'}">${i + 1}</td><td>${esc(String(r.name))}${r.mine ? ' <span class="dim">(you)</span>' : ''}</td><td class="g"><b>${Math.round(r.score).toLocaleString('en-US')}</b></td><td>${Math.round(r.minutes)} min</td><td>${esc(String(r.grades))}</td><td class="dim">${ago(r.at)}</td></tr>`).join('')}</table>`;
 }

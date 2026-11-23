@@ -5,7 +5,7 @@ Priority order, top first. Each epic is one bigger work package (WP), roughly on
 **Every WP includes:** the design loop (2 options or mockups, pick, log the decision in `docs/DESIGN.md`), tests for new rules, an autoplayer balance check (campaign still completes, no soft-lock), Codex text for new concepts, a `CHANGELOG.md` line.
 
 ## Current state (2026-11-23)
-Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, Vitest tests, and an autoplayer that completes the campaign. E1 added money (credits, running costs, ledger). E3 added the colony market and the model lifecycle, E4 wear, service and power deals. There is no telemetry yet. The owner will play only once the game feels finished.
+Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, Vitest tests, and an autoplayer that completes the campaign. E1 added money (credits, running costs, ledger). E3 added the colony market and the model lifecycle, E4 wear, service and power deals, E8 opt-in telemetry and a friends score sheet (live once the owner redeploys the cloud script). The owner will play only once the game feels finished.
 
 ## Overview
 | # | Epic | Depends on | Status |
@@ -17,7 +17,7 @@ Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, Vites
 | E5 | Decision events and politics | E1 (E3 helps) | todo |
 | E6 | Setting pass: sci-fi colony framing, intro, eras, Codex | E3 | todo |
 | E7 | Scenarios and run modifiers | E1–E5 | todo |
-| E8 | Telemetry and friends score sheet | E1 | todo |
+| E8 | Telemetry and friends score sheet | E1 | done |
 | E9 | Launch readiness: blueprints, tutorial update, housekeeping | E1–E8 | todo |
 | — | Owner's first full play, then a fix round, then share with friends | E8, E9 | owner |
 
@@ -75,7 +75,7 @@ Goal: replayability through different rules, not just different seeds.
 - **Balance:** the autoplayer finishes each scenario on at least one seed.
 - Hotspots: state, game, hud. Size: L.
 
-## E8 Telemetry and friends score sheet
+## E8 Telemetry and friends score sheet (done)
 Goal: when the owner and friends play online, runs are logged so the game can be improved; friends compare scores.
 - **Design:** two options for the data shape (one row per event vs. one row per run with a JSON summary), pick one. Opt-in dialog mockup.
 - **Build:** a local run log (export as JSON); batched, anonymous uploads (random player id, no personal data) through the E2 Apps Script (`tools/apps-script/Code.gs`: add `telemetry` and `score` ops and tabs, the owner redeploys a new version); opt-in on first start; a score submit at run end and a leaderboard view.
@@ -90,6 +90,8 @@ Goal: when the owner and friends play online, runs are logged so the game can be
 - Size: L.
 
 ## Done
+- 2026-11-23: E8 Telemetry and friends score sheet (opt-in card, run log export, one row per run, score sheet, Apps Script version 2). Owner step: paste the new `Code.gs` and deploy a new version (`tools/apps-script/README.md`, "Updating the script later"); `DEFAULT_CLOUD_URL` is still empty, so players paste the URL until it is built in.
+- 2026-11-23: Ledger per-building table redesign and battery level on the building (owner requests).
 - 2026-11-23: E4 Operations (wear and breakdowns, Service Center and U overlay, grid connection upgrades, fixed-price contract, peak curtailment, Next-Gen Accelerators, book value, save v5). Follow-ups: the Service overlay's amber/red wear tint is hard to see under tall buildings (a badge carries it from 80%); the tutorial does not mention wear yet (E9).
 - 2026-11-23: E3 Market and models (five demand segments, latency from load, reputation from uptime, Lite/Standard/Max models aging against a frontier, auto-deploy, special orders, Market & Models panel, save v4). Follow-ups: Era V runs over its new 30-minute par on 2 of 5 seeds (26–48 min) and Era III on 2 of 5 (up to 37 min); the top bar overflow at 1920 px from E1 is still open; tutorial tips for the market belong in E9.
 - 2026-11-23: E1 Colony economy (credits, capex and opex, exports, funding rounds, emergency grants, ledger, save v3). Follow-ups for E3: Era IV pacing runs over par on 3 of 5 seeds; the top bar overflows at 1920 px in Era IV and later (pre-existing, slightly worse with the credits chip).

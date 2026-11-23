@@ -52,6 +52,7 @@
 
 ## UI and audio
 
+- Telemetry (`ui/telemetry.ts`) watches the live state from `Hud.update()` (era changes, breakdowns, grants, models, events, a sample per sim-minute), keeps the last 5 run logs in local storage, and with consent upserts a run summary through the same Apps Script web app as cloud save (ops `telemetry`, `score`, `scores`). The score rule is pure (`sim/score.ts`).
 - The Market & Models modal (`B`) and the sidebar market card with special orders live in `ui/market.ts` and `ui/market.css`; `hud.ts` only hooks them in.
 - The ledger (`ui/ledger.ts`, `ui/ledger.css`) renders the credits chip, the ledger modal (`K`) and the money rows in build tooltips; `hud.ts` only hooks it in.
 - The DOM HUD (`ui/hud.ts`) has heavy parts throttled to 4 Hz, and the badges follow buildings every frame. Badges are colour-blind safe: an octagon ✕ means severe, a triangle ▲ means a warning, plus a glyph.

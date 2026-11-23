@@ -6,29 +6,36 @@
  * (no CORS preflight). Every request has { v: 1, op: "...", ... } and gets
  * JSON back: { ok: true, ... } or { ok: false, error: "..." }.
  *
- * Ops today:   ping, save, load, info   (cross-device cloud save)
- * Ops later:   telemetry, score          (epic "Telemetry and friends score sheet")
- *   Add a handler to ROUTES and a tab name to TABS. Nothing else changes.
+ * Ops:  ping, save, load, info       cross-device cloud save (by sync code)
+ *       telemetry                    opt-in anonymous run summary, one row per run, updated in place
+ *       score, scores                friends score sheet: submit a finished campaign, read the top list
  *
- * No personal data: players are identified only by a random sync code
- * the game creates (for example K7QP-M2XD-9FRA).
+ * No personal data: saves are found only by a random sync code, telemetry and scores by a random
+ * player id (for example k3v9q2m7xa). A score carries the name the player typed, nothing else.
  */
 
-var VERSION = 1;
-var TABS = { saves: 'saves' };              // later: telemetry: 'telemetry', scores: 'scores'
+var VERSION = 2;
+var TABS = { saves: 'saves', telemetry: 'telemetry', scores: 'scores' };
 var CHUNK = 40000;                          // one Sheets cell holds at most 50,000 characters
 var MAX_SAVE = 2000000;                     // 2 MB per save, at most 50 rows
 var CODE_RE = /^[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}$/;
 var SLOT_RE = /^[a-z0-9_-]{1,16}$/;
 var SAVE_HEADER = ['code', 'slot', 'part', 'parts', 'savedAt', 'meta', 'enc', 'data'];
+var ID_RE = /^[a-z0-9]{10}$/;               // random player id and run id from the game
+var TELE_HEADER = ['player', 'run', 'updatedAt', 'game', 'mode', 'difficulty', 'seed', 'era', 'minutes', 'status', 'grades', 'credits', 'grants', 'breakdowns', 'models', 'summary'];
+var SCORE_HEADER = ['player', 'run', 'at', 'name', 'mode', 'difficulty', 'seed', 'minutes', 'grades', 'score'];
+var MAX_SUMMARY = 30000;
+var MODES = { campaign: 1, sandbox: 1 };
+var DIFFS = { relaxed: 1, standard: 1, race: 1 };
 
 var ROUTES = {
   ping: function () { return { ok: true, version: VERSION }; },
   save: opSave,
   load: opLoad,
   info: opInfo,
-  // telemetry: opTelemetry,   // later epic
-  // score: opScore,           // later epic
+  telemetry: opTelemetry,
+  score: opScore,
+  scores: opScores,
 };
 
 function doGet() {
@@ -142,3 +149,81 @@ function readSaveLocked(req, slot, withData) {
 
 function opLoad(req) { return readSave(req, true); }
 function opInfo(req) { return readSave(req, false); }
+
+// ───────── telemetry and scores ─────────
+function checkIds(req) {
+  if (!ID_RE.test(String(req.player || ''))) throw new Error('bad player id');
+  if (!ID_RE.test(String(req.run || ''))) throw new Error('bad run id');
+}
+function num(v, lo, hi) { var n = Number(v); if (!isFinite(n)) return lo; return Math.max(lo, Math.min(hi, n)); }
+function word(v, set, def) { v = String(v || ''); return set[v] ? v : def; }
+/** plain text for a cell: no leading = + - @ (no formulas), short */
+function text(v, max) { return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').replace(/^[=+\-@]+/, '').slice(0, max); }
+
+/** the row (1-based) for this player and run, or 0 */
+function findRun(sh, player, run) {
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return 0;
+  var keys = sh.getRange(2, 1, n, 2).getValues();
+  for (var i = 0; i < keys.length; i++) if (keys[i][0] === player && keys[i][1] === run) return i + 2;
+  return 0;
+}
+
+/** Upsert one row per run: the latest summary replaces the previous one. */
+function opTelemetry(req) {
+  checkIds(req);
+  var r = req.row || {};
+  var summary = JSON.stringify(req.summary || {});
+  if (summary.length > MAX_SUMMARY) throw new Error('summary too large');
+  var row = [req.player, req.run, new Date().toISOString(), text(r.game, 20), word(r.mode, MODES, 'campaign'), word(r.difficulty, DIFFS, 'standard'),
+    String(num(r.seed, 0, 4294967295)), String(num(r.era, 0, 5)), String(num(r.minutes, 0, 100000)), text(r.status, 12), text(r.grades, 20),
+    String(Math.round(num(r.credits, -1e9, 1e9))), String(num(r.grants, 0, 1000)), String(num(r.breakdowns, 0, 1e7)), String(num(r.models, 0, 10000)), summary];
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = sheet(TABS.telemetry, TELE_HEADER);
+    var at = findRun(sh, req.player, req.run) || sh.getLastRow() + 1;
+    sh.getRange(at, 1, 1, TELE_HEADER.length).setNumberFormat('@').setValues([row]);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true };
+}
+
+/** Submit a finished campaign. One row per run: a resubmit updates the name. */
+function opScore(req) {
+  checkIds(req);
+  var name = text(req.name, 16).trim();
+  if (!name) throw new Error('name missing');
+  var row = [req.player, req.run, new Date().toISOString(), name, word(req.mode, MODES, 'campaign'), word(req.difficulty, DIFFS, 'standard'),
+    String(num(req.seed, 0, 4294967295)), String(Math.round(num(req.minutes, 0, 100000))), text(req.grades, 20), String(Math.round(num(req.score, 0, 1e6)))];
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = sheet(TABS.scores, SCORE_HEADER);
+    var at = findRun(sh, req.player, req.run) || sh.getLastRow() + 1;
+    sh.getRange(at, 1, 1, SCORE_HEADER.length).setNumberFormat('@').setValues([row]);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true };
+}
+
+/** Top scores for one mode and difficulty, best first (ties: faster first). Player ids are not sent back. */
+function opScores(req) {
+  var mode = word(req.mode, MODES, 'campaign'), diff = word(req.difficulty, DIFFS, 'standard');
+  var limit = req.limit === undefined ? 20 : num(req.limit, 1, 50);
+  var sh = sheet(TABS.scores, SCORE_HEADER);
+  var n = sh.getLastRow() - 1;
+  var list = [];
+  if (n > 0) {
+    var rows = sh.getRange(2, 1, n, SCORE_HEADER.length).getValues();
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+      if (r[4] !== mode || r[5] !== diff) continue;
+      list.push({ run: r[1], mine: req.player && r[0] === req.player, at: r[2], name: r[3], seed: Number(r[6]), minutes: Number(r[7]), grades: r[8], score: Number(r[9]) });
+    }
+  }
+  list.sort(function (a, b) { return b.score - a.score || a.minutes - b.minutes; });
+  return { ok: true, scores: list.slice(0, limit) };
+}

@@ -41,13 +41,20 @@ Paste the Web app URL into the next Claude session (or a GitHub issue) and say "
 Auto upload is on by default: every 5 minutes of play and when you switch away from the game. It never overwrites a game that is further along or a different game; for that, use UPLOAD NOW (the game asks first).
 
 ## Updating the script later
-When a new version of `Code.gs` arrives (for example for telemetry and scores):
+When a new version of `Code.gs` arrives (version 2 adds anonymous telemetry and the friends score sheet; check the first lines of the file for `var VERSION = 2`):
 1. Open the Sheet → **Extensions → Apps Script**, replace all code with the new file, click **Save**.
 2. Click **Deploy → Manage deployments**, select the deployment, click the **pencil** (Edit).
 3. Under Version choose **New version**, click **Deploy**. The URL stays the same, so nothing changes in the game.
+4. Check: open the Web app URL in a browser tab. It should say "version 2". After the first game with sharing on, the Sheet gets two new tabs, `telemetry` (one row per run) and `scores` (one row per submitted campaign).
+
+## Telemetry and the score sheet
+- Players are asked once before their first game whether to share anonymous run summaries. Only "yes" sends anything; the choice can be changed in Menu → Anonymous run data. A copy of the last 5 runs always stays on the device (Menu → Run log).
+- What is sent: a random player id, a random run id, game version, mode, difficulty, seed, era, minutes, era grades and times, money totals, breakdowns, models shipped, a sample every minute (credits, revenue, compute, buildings, problems) and events (era, objective, breakdowns, grants, events, finish, leaving the tab). No name, email, sync code or save data.
+- The score sheet needs no consent: the player types a name on the final screen and presses Submit. Anyone can read the top 20 per difficulty; player ids are never sent back.
+- To reset: delete the rows (or the whole tab) in the Sheet.
 
 ## How it works (for developers)
 - `POST` with a JSON body sent as `text/plain` (a "simple" request, so the browser sends no CORS preflight, which Apps Script cannot answer). Apps Script answers with a redirect to `script.googleusercontent.com`, which `fetch` follows.
-- Ops: `ping`, `save`, `load`, `info`. New ops (telemetry, score) are a handler in `ROUTES` plus a tab name in `TABS`.
+- Ops: `ping`, `save`, `load`, `info` (saves by sync code), `telemetry` (upsert one row per player and run), `score` and `scores` (submit and read the score sheet). New ops are a handler in `ROUTES` plus a tab name in `TABS`. Text cells lose leading `= + - @`, so nothing is read as a formula.
 - The game gzips the save and sends it as base64 (`enc: "gz64"`); browsers without `CompressionStream` send raw JSON. The script splits the string into 40,000-character rows (a Sheets cell holds at most 50,000) in the `saves` tab: `code | slot | part | parts | savedAt | meta | enc | data`. Cells are plain text, so nothing is read as a formula.
 - `tests/appsscript.test.ts` runs this script against a fake Sheet.
