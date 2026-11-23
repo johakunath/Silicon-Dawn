@@ -1,9 +1,9 @@
-# Build, test and publish the game to GitHub Pages on every push to master.
+# Build, test and publish the game to GitHub Pages on every push to main.
 name: Deploy to GitHub Pages
 
 on:
   push:
-    branches: [master]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
