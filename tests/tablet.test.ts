@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { PROFILES, autoProfile, frameDue, resolveProfile, targetFps } from '../src/render/quality';
 import { angleDelta, twoFinger } from '../src/game/touch';
 import { cancelLabel } from '../src/ui/touchbar';
-import { CODE_ALPHABET, autoUploadAllowed, codeFromBytes, decodeSave, encodeSave, normalizeCode, saveSig, summarize, validUrl } from '../src/ui/cloudsave';
+import { CODE_ALPHABET, adoptRun, autoUploadAllowed, codeFromBytes, decodeSave, encodeSave, normalizeCode, saveSig, summarize, validUrl } from '../src/ui/cloudsave';
 
 describe('quality profiles', () => {
   it('auto picks Performance on touch-first devices and Quality with a mouse', () => {
@@ -97,13 +97,26 @@ describe('cloud save', () => {
   });
 
   it('auto upload never overwrites a further-along or different run', () => {
-    const local = summarize(JSON.stringify({ era: 2, time: 1800, seed: 5, mode: 'campaign' }), 'Desktop');
-    expect(local).toMatchObject({ era: 2, min: 30, seed: 5 });
+    const local = { ...summarize(JSON.stringify({ era: 2, time: 1801, seed: 5, mode: 'campaign', difficulty: 'standard' }), 'Desktop'), runId: 'r1' };
+    expect(local).toMatchObject({ era: 2, min: 30, time: 1801, seed: 5 });
+    const cloud = (meta: object) => ({ found: true, meta: { seed: 5, mode: 'campaign', difficulty: 'standard', runId: 'r1', time: 1200, ...meta } });
     expect(autoUploadAllowed(local, null)).toBe(true);
     expect(autoUploadAllowed(local, { found: false })).toBe(true);
-    expect(autoUploadAllowed(local, { found: true, meta: { seed: 5, mode: 'campaign', min: 20 } })).toBe(true);
-    expect(autoUploadAllowed(local, { found: true, meta: { seed: 5, mode: 'campaign', min: 45 } })).toBe(false);
-    expect(autoUploadAllowed(local, { found: true, meta: { seed: 9, mode: 'campaign', min: 1 } })).toBe(false);
+    expect(autoUploadAllowed(local, cloud({}))).toBe(true);
+    expect(autoUploadAllowed(local, cloud({ time: 1829 }))).toBe(false); // same minute, but the cloud is ahead
+    expect(autoUploadAllowed(local, cloud({ runId: 'r2', time: 1 }))).toBe(false); // another campaign, same seed
+    expect(autoUploadAllowed({ ...local, runId: undefined }, cloud({ time: 1 }))).toBe(false); // unknown run
+    expect(autoUploadAllowed(local, cloud({ difficulty: 'race' }))).toBe(false);
+    expect(autoUploadAllowed(local, cloud({ seed: 9 }))).toBe(false);
+  });
+
+  it('a reloaded game adopts the synced run only if it continues it', () => {
+    const b = { runId: 'r1', seed: 5, mode: 'campaign', difficulty: 'standard', time: 1800 };
+    const m = (time: number, difficulty = 'standard') => summarize(JSON.stringify({ era: 1, time, seed: 5, mode: 'campaign', difficulty }), 'Tablet');
+    expect(adoptRun(b, m(1900))).toBe('r1');
+    expect(adoptRun(b, m(0))).toBeUndefined(); // a fresh campaign on the same seed
+    expect(adoptRun(b, m(1900, 'race'))).toBeUndefined();
+    expect(adoptRun(null, m(1900))).toBeUndefined();
     expect(summarize('not json', 'Tablet').era).toBe(0);
   });
 });

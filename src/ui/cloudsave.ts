@@ -13,7 +13,10 @@ const AUTO_EVERY_MS = 5 * 60 * 1000;
 const KEEPALIVE_LIMIT = 60000; // browsers cap keepalive request bodies at 64 KB
 
 export interface CloudConfig { url: string; code: string; auto: boolean }
-export interface CloudMeta { era: number; min: number; seed: number; mode: string; device: string }
+/** time = exact simulated seconds (guard); min = rounded, display only; runId = random id of one campaign across devices */
+export interface CloudMeta { era: number; min: number; time: number; seed: number; mode: string; difficulty: string; device: string; runId?: string }
+const RUN_KEY = 'sd_cloud_run_v1';
+interface RunBinding { runId: string; seed: number; mode: string; difficulty: string; time: number }
 export interface CloudInfo { found: boolean; savedAt?: string; meta?: Partial<CloudMeta> }
 
 /** 12 random symbols as XXXX-XXXX-XXXX (60 bits). */
@@ -45,19 +48,38 @@ export function validUrl(url: string): boolean {
 export function summarize(json: string, device: string): CloudMeta {
   try {
     const d = JSON.parse(json);
-    return { era: Number(d.era) | 0, min: Math.round(Number(d.time) / 60) || 0, seed: Number(d.seed) || 0, mode: String(d.mode ?? 'campaign'), device };
-  } catch { return { era: 0, min: 0, seed: 0, mode: '?', device }; }
+    const time = Number(d.time) || 0;
+    return { era: Number(d.era) | 0, min: Math.round(time / 60), time, seed: Number(d.seed) || 0, mode: String(d.mode ?? 'campaign'), difficulty: String(d.difficulty ?? 'standard'), device };
+  } catch { return { era: 0, min: 0, time: 0, seed: 0, mode: '?', difficulty: '?', device }; }
 }
 
 /**
- * Auto upload must never clobber a further-along run from another device:
- * only upload over the same run (same seed and mode) that is not ahead of us, or over an empty cloud.
+ * Auto upload must never clobber another campaign or a further-along state of the same one:
+ * only an empty cloud, or the same run (same run id; seed, mode and difficulty as a cross-check)
+ * whose exact simulated time is not ahead of ours. Everything else needs a manual, confirmed upload.
  */
 export function autoUploadAllowed(local: CloudMeta, cloud: CloudInfo | null): boolean {
   if (!cloud || !cloud.found || !cloud.meta) return true;
   const m = cloud.meta;
-  if (m.seed !== local.seed || m.mode !== local.mode) return false;
-  return (m.min ?? 0) <= local.min;
+  if (!m.runId || m.runId !== local.runId) return false;
+  if (m.seed !== local.seed || m.mode !== local.mode || m.difficulty !== local.difficulty) return false;
+  return typeof m.time === 'number' && m.time <= local.time;
+}
+
+/**
+ * Which cloud run a local game continues. Games uploaded or downloaded in this tab are known directly.
+ * After a reload (Continue from autosave) the game is matched to the run this device last synced, but
+ * only if seed, mode and difficulty agree and it is not behind that sync (a fresh campaign starts at 0).
+ */
+export function adoptRun(b: RunBinding | null, local: CloudMeta): string | undefined {
+  if (!b) return undefined;
+  return b.seed === local.seed && b.mode === local.mode && b.difficulty === local.difficulty && local.time >= b.time ? b.runId : undefined;
+}
+
+export function newRunId(): string {
+  const b = new Uint8Array(9);
+  crypto.getRandomValues(b);
+  return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 }
 
 /** Content fingerprint of a save, ignoring the save timestamp: changes on any build, link or tick, also while paused. */
@@ -137,15 +159,38 @@ export class CloudSave {
 
   /** ifSavedAt: replace only if the cloud still holds this save ('' = only if empty); omit to overwrite */
   /** json: the exact snapshot that passed a guard (auto upload); default = the game right now */
-  async upload(keepalive = false, ifSavedAt?: string, json = this.g.saveJson()): Promise<CloudInfo> {
-    const meta = summarize(json, this.device());
+  /** state + runId: the game the snapshot came from and the run it belongs to (default: this game's run, or a new one) */
+  async upload(keepalive = false, ifSavedAt?: string, json = this.g.saveJson(), state: object = this.g.s, runId?: string): Promise<CloudInfo> {
+    const meta: CloudMeta = { ...summarize(json, this.device()) };
+    meta.runId = runId ?? this.runFor(state, meta) ?? newRunId();
     const { enc, data } = await encodeSave(json);
     if (keepalive && data.length > KEEPALIVE_LIMIT) throw new Error('too large for a background upload');
     const r = await this.call({ op: 'save', enc, data, meta, ...(ifSavedAt !== undefined ? { ifSavedAt } : {}) }, keepalive);
     this.last = { found: true, savedAt: r.savedAt, meta };
     this.lastAuto = Date.now();
     this.lastSig = saveSig(json);
+    this.bind(state, meta);
     return this.last;
+  }
+
+  private runs = new WeakMap<object, string>();
+  /** the cloud run a game state belongs to, if known */
+  runFor(state: object, local: CloudMeta): string | undefined {
+    let r = this.runs.get(state);
+    if (!r && state === this.g.s) {
+      let b: RunBinding | null = null;
+      try { b = JSON.parse(localStorage.getItem(RUN_KEY) ?? 'null'); } catch { /* */ }
+      r = adoptRun(b, local);
+      if (r) this.runs.set(state, r);
+    }
+    return r;
+  }
+  /** remember that this game state is (now) that cloud run, also across reloads */
+  bind(state: object, meta: Partial<CloudMeta>) {
+    if (!meta.runId) return;
+    this.runs.set(state, meta.runId);
+    const b: RunBinding = { runId: meta.runId, seed: Number(meta.seed), mode: String(meta.mode), difficulty: String(meta.difficulty), time: Number(meta.time) || 0 };
+    try { localStorage.setItem(RUN_KEY, JSON.stringify(b)); } catch { /* */ }
   }
 
   /** the cloud save as a JSON string (does not load it) */
@@ -159,18 +204,19 @@ export class CloudSave {
 
   private async autoUpload(leaving: boolean) {
     if (!this.cfg.auto || !this.ready() || this.busy || !this.g.started) return;
-    const json = this.g.saveJson();
+    const json = this.g.saveJson(), state = this.g.s;
     if (saveSig(json) === this.lastSig) return; // nothing changed since the last upload
     this.busy = true;
     try {
       const local = summarize(json, this.device());
+      local.runId = this.runFor(state, local);
       // when leaving there is no time for a check round-trip; rely on the last known cloud state
       if (leaving && !this.last) return;
       const cloud = leaving ? this.last : await this.info();
       if (!autoUploadAllowed(local, cloud)) { this.lastAuto = Date.now(); return; }
       // the server re-checks atomically that the cloud still holds what we saw (another device may have uploaded since)
       // upload the same snapshot the guard checked: the player may load or start another game while info() is pending
-      await this.upload(leaving, cloud?.found ? cloud.savedAt ?? '' : '', json);
+      await this.upload(leaving, cloud?.found ? cloud.savedAt ?? '' : '', json, state, local.runId ?? newRunId());
       this.lastError = '';
     } catch (e) {
       this.lastError = (e as Error).message;
@@ -231,9 +277,13 @@ export function bindCloud(root: HTMLElement, g: Game, c: CloudSave, reopen: (set
   q('#cl-up')?.addEventListener('click', () => void run('Uploading…', async () => {
     if (!g.started) throw new Error('start or load a game first');
     const cloud = await c.info();
-    const local = summarize(g.saveJson(), c.device());
-    if (!autoUploadAllowed(local, cloud) && !confirm(`The cloud holds a different or further-along game (${describeCloud(cloud).replace(/&#\d+;/g, '')}). Replace it with this one?`)) return;
-    await c.upload();
+    const json = g.saveJson(), state = g.s;
+    const local = summarize(json, c.device());
+    local.runId = c.runFor(state, local);
+    const same = autoUploadAllowed(local, cloud);
+    if (!same && !confirm(`The cloud holds a different or further-along game (${describeCloud(cloud).replace(/&#\d+;/g, '')}). Replace it with this one?`)) return;
+    // replacing a different campaign starts a new run id, so the other device's game is never treated as a continuation
+    await c.upload(false, undefined, json, state, same ? local.runId ?? newRunId() : newRunId());
     toast('Uploaded to the cloud', 'good');
   }).then(() => reopen(false)));
   q('#cl-down')?.addEventListener('click', () => {
@@ -242,7 +292,7 @@ export function bindCloud(root: HTMLElement, g: Game, c: CloudSave, reopen: (set
       const { json, info: ci } = await c.download();
       if (g.started && !confirm(`Load the cloud game (${describeCloud(ci).replace(/&#\d+;/g, '')})? Your current game is autosaved first.`)) return;
       g.autosave();
-      if (g.loadJson(json)) { loaded = true; close(); }
+      if (g.loadJson(json)) { loaded = true; c.bind(g.s, { ...summarize(json, c.device()), runId: ci.meta?.runId }); close(); }
     }).then(() => { if (!loaded) reopen(false); });
   });
   // refresh the status line once per opening
