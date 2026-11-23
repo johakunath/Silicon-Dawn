@@ -22,7 +22,7 @@
   --display: 'Rajdhani', 'Segoe UI', sans-serif;
   --body: 'Inter', 'Segoe UI', sans-serif;
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: rgba(111, 233, 255, 0.35) transparent; } /* thin scrollbars in Firefox (WebKit styles them per panel) */
 html, body { margin: 0; height: 100%; overflow: hidden; background: #05070d; color: var(--text); font-family: var(--body); font-size: var(--fs); user-select: none; }
 #game { position: fixed; inset: 0; width: 100vw; height: 100vh; display: block; outline: none; }
 #ui { position: fixed; inset: 0; pointer-events: none; z-index: 2; }
@@ -137,7 +137,7 @@ kbd { font-family: var(--display); font-weight: 700; font-size: 13px; padding: 1
 .kv .k { color: var(--dim); } .kv .v { font-family: var(--display); font-weight: 600; font-size: 17px; text-align: right; font-variant-numeric: tabular-nums; }
 .buf { display: flex; align-items: center; gap: 8px; font-size: 15px; margin-top: 5px; }
 .buf .bb { flex: 1; height: 7px; background: rgba(255,255,255,.08); } .buf .bb i { display: block; height: 100%; }
-#insp .acts { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
+#insp .acts { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; position: sticky; bottom: -14px; padding: 8px 0 10px; background: #0d1328; }  /* actions stay reachable while the inspector scrolls */
 
 /* status badges (colour-blind safe: shape + colour + glyph) */
 #badges { position: absolute; left: 0; top: 0; pointer-events: none; }
@@ -244,7 +244,12 @@ details.ratio summary { cursor: pointer; font-family: var(--display); font-weigh
 .toolbtn.on { background: rgba(255,179,71,.3); border-color: var(--amber); box-shadow: 0 0 12px rgba(255,179,71,.4) inset; }
 #tool-demo.on { background: rgba(255,90,90,.3); border-color: var(--red); }
 #hint { bottom: 96px !important; }
-#insp { max-height: calc(100vh - 430px); overflow-y: auto; }
+/* right column: objectives on top, inspector at the bottom; with both open they split the height (no overlap on 1920×969 Firefox or 1280×800 tablets) */
+#insp { max-height: calc(52% - 20px); overflow-y: auto; }
+#ui:has(#insp[style*="display: block"]) #side { max-height: calc(48% - 88px); overflow-y: auto; }
+#ui:has(#insp[style*="display: block"]) #side > * { flex-shrink: 0; }
+/* narrow desktop windows (UI scaled to 1700 layout px, e.g. 1080p at 125%): the hotbar and tools need the bottom row, so the inspector sits above it */
+@media (max-width: 1699px) { body:not(.touch) #insp { bottom: 112px; max-height: calc(52% - 122px); } }
 
 /* ── tutorial ── */
 #tspot { position: absolute; z-index: 30; pointer-events: none; border: 3px solid var(--yellow); border-radius: 8px; box-shadow: 0 0 0 9999px rgba(3,5,12,.24), 0 0 24px rgba(255,224,102,.8); animation: tsp 1.4s infinite; transition: all .25s; }
@@ -312,7 +317,7 @@ body.touch kbd, body.touch #hint { display: none !important; }
 body.touch #side, body.touch #insp { right: 106px; }
 /* touch: the hotbar is a keyboard feature (1–0); the build panel is the picker. Frees the bottom row for the inspector. */
 body.touch #hotbar { display: none; }
-body.touch #insp { max-height: 56%; overflow-y: auto; }
+body.touch #insp { overflow-y: auto; }
 /* E8: finale score and the friends score sheet */
 .fscore { display: flex; gap: 24px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 6px 0 4px; text-align: left; }
 .fscore .l { font-family: var(--display); letter-spacing: .12em; color: var(--dim); font-size: 14px; }

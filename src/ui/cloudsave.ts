@@ -17,7 +17,7 @@ export const DEFAULT_CLOUD_URL = 'https://script.google.com/macros/s/AKfycbxP6r9
 const AUTO_EVERY_MS = 5 * 60 * 1000;
 const KEEPALIVE_LIMIT = 60000; // browsers cap keepalive request bodies at 64 KB
 
-export interface CloudConfig { url: string; code: string; auto: boolean }
+export interface CloudConfig { code: string; auto: boolean }
 /** time = exact simulated seconds (guard); min = rounded, display only; runId = random id of one campaign across devices */
 export interface CloudMeta { era: number; min: number; time: number; seed: number; mode: string; difficulty: string; device: string; runId?: string }
 const RUN_KEY = 'sd_cloud_autosave_run_v1';
@@ -121,8 +121,9 @@ export async function decodeSave(enc: string, data: string): Promise<string> {
 
 export class CloudSave {
   cfg: CloudConfig = (() => {
-    const def: CloudConfig = { url: DEFAULT_CLOUD_URL, code: '', auto: true };
-    try { const c = { ...def, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; if (!c.url) c.url = DEFAULT_CLOUD_URL; return c; } catch { return def; }
+    const def: CloudConfig = { code: '', auto: true };
+    // the server is always the owner's web app (DEFAULT_CLOUD_URL); an old stored url is ignored
+    try { const { code, auto } = { ...def, ...JSON.parse(localStorage.getItem(KEY) ?? '{}') }; return { code: String(code ?? ''), auto: auto !== false }; } catch { return def; }
   })();
   busy = false;
   last: CloudInfo | null = null;
@@ -136,11 +137,11 @@ export class CloudSave {
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') void this.autoUpload(true); });
   }
 
-  ready() { return validUrl(this.cfg.url) && !!normalizeCode(this.cfg.code); }
+  ready() { return validUrl(DEFAULT_CLOUD_URL) && !!normalizeCode(this.cfg.code); }
   save() { try { localStorage.setItem(KEY, JSON.stringify(this.cfg)); } catch { /* ignore */ } }
   device() { return document.body.classList.contains('touch') ? 'Tablet' : 'Desktop'; }
 
-  target(): CloudTarget { return { url: this.cfg.url.trim(), code: this.cfg.code }; }
+  target(): CloudTarget { return { url: DEFAULT_CLOUD_URL, code: this.cfg.code }; }
   private sameTarget(t: CloudTarget) { const n = this.target(); return n.url === t.url && n.code === t.code; }
 
   private async call(body: Record<string, unknown>, keepalive = false, t: CloudTarget = this.target()): Promise<any> {
@@ -253,8 +254,7 @@ export function describeCloud(i: CloudInfo | null): string {
 export function cloudRows(c: CloudSave, setup: boolean): string {
   const st = 'flex:1;font-size:15px;color:#93a4c4';
   if (!c.ready() || setup) {
-    return `<div class="setrow" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label>☁ Cloud save</label><span style="${st}">Play on desktop and tablet with one save. Needs your own Google Sheet: steps in <b>tools/apps-script/README.md</b>.</span></div>
-      <div class="setrow"><label>Script URL</label><input id="cl-url" type="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.cfg.url)}" style="flex:1;font-size:15px;padding:8px"></div>
+    return `<div class="setrow" style="margin-top:14px;border-top:1px solid var(--line);padding-top:14px"><label>☁ Cloud save</label><span style="${st}">Play on desktop and tablet with one save: enter the same sync code on each device.</span></div>
       <div class="setrow"><label>Sync code</label><input id="cl-code" value="${esc(c.cfg.code || newCode())}" style="width:230px;font:600 20px monospace;padding:6px;letter-spacing:.08em"><span style="${st}">Use the same code on every device. Keep it private: it is the key to your save.</span></div>
       <div class="setrow"><label></label><button id="cl-connect" class="primary">CONNECT</button>${c.ready() ? '<button id="cl-cancel">BACK</button>' : ''}<span id="cl-msg" style="${st}"></span></div>`;
   }
@@ -274,13 +274,12 @@ export function bindCloud(root: HTMLElement, g: Game, c: CloudSave, reopen: (set
     try { await fn(); c.lastError = ''; } catch (e) { c.lastError = (e as Error).message; toast('Cloud: ' + c.lastError, 'bad'); } finally { c.busy = false; }
   };
   q('#cl-connect')?.addEventListener('click', () => {
-    const url = q('#cl-url')!.value.trim(), code = normalizeCode(q('#cl-code')!.value);
+    const code = normalizeCode(q('#cl-code')!.value);
     const msg = q('#cl-msg')!;
-    if (!validUrl(url)) { msg.textContent = 'The URL must start with https://script.google.com/'; return; }
     if (!code) { msg.textContent = 'A sync code has 12 letters and digits, like K7QP-M2XD-9FRA.'; return; }
     if (c.busy) { msg.textContent = 'A cloud transfer is still running. Try again in a moment.'; return; }
     c.busy = true;
-    c.cfg.url = url; c.cfg.code = code; c.last = null;
+    c.cfg.code = code; c.last = null;
     msg.textContent = 'Connecting…';
     void (async () => {
       try { await c.ping(); c.save(); await c.info(); toast('Cloud save connected', 'good'); c.busy = false; reopen(false); }

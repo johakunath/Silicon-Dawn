@@ -32,7 +32,7 @@ import { deployedModel, share } from '../sim/market';
 import { breakChance, wearRate } from '../sim/operations';
 import { Telemetry, cleanName } from './telemetry';
 import type { ScoreRow } from './telemetry';
-import { DEFAULT_CLOUD_URL, validUrl } from './cloudsave';
+import { DEFAULT_CLOUD_URL } from './cloudsave';
 import { campaignScore, campaignPar, gradeLine } from '../sim/score';
 import { version as GAME_VERSION } from '../../package.json';
 
@@ -75,7 +75,7 @@ export class Hud {
   market = new MarketPanel();
   private scoresReq = 0;
   /** opt-in telemetry, local run log and the friends score sheet (uses the cloud-save script URL) */
-  telemetry = new Telemetry(() => { const u = this.g.cloud?.cfg.url ?? ''; return validUrl(u) ? u : DEFAULT_CLOUD_URL; }, GAME_VERSION);
+  telemetry = new Telemetry(() => DEFAULT_CLOUD_URL, GAME_VERSION);
   tutorial!: Tutorial;
   hoveredPaletteType: string | null = null;
   private codexCh = 'start';
