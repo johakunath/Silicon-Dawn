@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createState, hq, TICK } from '../src/sim/state';
 import type { GameState } from '../src/sim/state';
 import { checkObjectives, scoreEra, step, storageReserve } from '../src/sim/sim';
-import { checkPlace, demolish, place } from '../src/sim/actions';
+import { checkPlace, demolish, moveBuilding, place } from '../src/sim/actions';
 import { capexOf, keepLevel, liveByType, overdraftFloor, powerPrice, priceMul, unitEcon } from '../src/sim/economy';
 import { BUILDING } from '../src/sim/data/buildings';
 import { ERAS } from '../src/sim/data/eras';
@@ -66,6 +66,16 @@ describe('capex and refunds', () => {
     expect(s.econ.credits).toBe(c0 - capexOf(s, 'smelter') / 2);
     expect(s.stock.metal).toBe(m0);
   });
+  it('moving a building stays free while in debt', () => {
+    const s = colony();
+    const h = hq(s);
+    const [x, y] = findSpot(s, 'smelter', h.x + 5, h.y);
+    const b = place(s, 'smelter', x, y, { autoLink: false })!;
+    const [nx, ny] = findSpot(s, 'smelter', h.x - 6, h.y + 5, 12);
+    s.econ.credits = -50;
+    expect(moveBuilding(s, b.id, nx, ny)).toBe(true);
+    expect(s.econ.credits).toBe(-50);
+  });
   it('difficulty scales capex', () => {
     expect(capexOf(createState(SEED, 'relaxed'), 'fab')).toBeLessThan(capexOf(createState(SEED, 'race'), 'fab'));
   });
@@ -107,6 +117,16 @@ describe('running costs and income', () => {
     expect(s.econ.costs.power_bought).toBeGreaterThan(0);
     // about 3 power for 10 s at roughly the peak price
     expect(s.econ.costs.power_bought).toBeGreaterThan(3 * 10 * p * 0.5);
+  });
+  it('charging batteries through the Core is bought too', () => {
+    const s = colony();
+    const h = hq(s);
+    const [x, y] = findSpot(s, 'battery', h.x + 4, h.y);
+    const b = place(s, 'battery', x, y)!;
+    rebuildGrids(s);
+    run(s, 10);
+    expect(b.charge).toBeGreaterThan(10);
+    expect(s.econ.costs.power_bought).toBeGreaterThan(0);
   });
   it('spilled solar surplus is sold to the colony grid', () => {
     const s = colony();

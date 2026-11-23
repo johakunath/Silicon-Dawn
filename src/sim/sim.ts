@@ -200,10 +200,11 @@ export function step(s: GameState) {
   for (const g of G) {
     const D = g.demand;
     const V = varGen[g.id];
-    let supplied = 0, firmUsed = 0, discharge = 0, charge = 0;
+    let supplied = 0, firmUsed = 0, discharge = 0, charge = 0, charge0 = 0;
     if (V >= D) {
       supplied = D;
       charge = V - D;
+      charge0 = charge;
     } else {
       const deficit = D - V;
       firmUsed = Math.min(firmCap[g.id], deficit);
@@ -236,9 +237,11 @@ export function step(s: GameState) {
         }
       }
     }
-    // the Core's generator is the colony grid tie: what it supplies is bought, and spilled surplus is sold
+    // the Core's generator is the colony grid tie: what it supplies to buildings or batteries is bought,
+    // and spilled surplus from your own generators is sold
     if (coreGen[g.id] > 0) {
-      imported += Math.max(0, Math.min(coreGen[g.id], D - (V - coreGen[g.id])));
+      const used = D + (charge0 - charge); // demand plus energy stored this tick
+      imported += Math.max(0, Math.min(coreGen[g.id], used - (V - coreGen[g.id])));
       exported += Math.max(0, charge - coreGen[g.id]);
     }
     const gasShare = firmCap[g.id] > 0 ? gasCap[g.id] / firmCap[g.id] : 0;

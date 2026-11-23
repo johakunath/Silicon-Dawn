@@ -753,6 +753,7 @@ export class Hud {
     render();
     const timer = window.setInterval(() => { if (this.openModal !== 'ledger') { clearInterval(timer); return; } render(); }, 1000);
     this.hideTip();
+    this.ledger.opened = true;
     this.show('ledger');
   }
 

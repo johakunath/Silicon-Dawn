@@ -90,7 +90,7 @@ export function checkPlace(s: GameState, type: string, x: number, y: number, mov
   if (d.needsWater && !isWaterAdjacent(w, x, y, d.size)) return { ok: false, reason: 'Must be next to water (shoreline)', cost };
   const credits = moving ? 0 : capexOf(s, type);
   if (!canAfford(s, cost)) return { ok: false, reason: `Need ${missingCost(s, cost)}`, cost, richness, platform, credits };
-  if (s.econ.credits < credits) return { ok: false, reason: `Need ${Math.ceil(credits - Math.max(0, s.econ.credits))} more credits`, cost, richness, platform, credits };
+  if (credits > 0 && s.econ.credits < credits) return { ok: false, reason: `Need ${Math.ceil(credits - Math.max(0, s.econ.credits))} more credits`, cost, richness, platform, credits };
   return { ok: true, cost, richness, platform, credits };
 }
 

@@ -84,6 +84,8 @@ const HISTORY = 600; // seconds of balance history for the sparkline
 
 export class Ledger {
   private snaps: Snap[] = [];
+  /** set once the player has opened the ledger (tutorial step) */
+  opened = false;
   private state: GameState | null = null;
 
   /** Record the economy totals (call a few times per second; keeps one snapshot per sim-second). */
