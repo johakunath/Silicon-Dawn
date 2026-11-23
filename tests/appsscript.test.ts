@@ -108,6 +108,13 @@ describe('Apps Script backend', () => {
       expect(post({ op: 'telemetry', player, run, summary: { x: 'y'.repeat(40000) } })).toMatchObject({ ok: false, error: 'summary too large' });
       post({ op: 'score', player, run, name: '=HYPERLINK("x")', difficulty: 'standard', score: 5 });
       expect(sheets.get('scores')![1][3].startsWith('=')).toBe(false);
+      // leading whitespace must not hide a formula: trimmed first, then neutralised
+      for (const name of [' =1+1', '\t+SUM(A1)', '  @x', ' - =2']) {
+        post({ op: 'score', player, run, name, difficulty: 'standard', score: 5 });
+        expect(sheets.get('scores')![1][3]).toMatch(/^[^=+\-@\s]/);
+      }
+      post({ op: 'telemetry', player, run, row: { game: ' =cmd', status: ' +x', grades: '  -A' }, summary: {} });
+      for (const c of sheets.get('telemetry')![1].slice(3, 11)) expect(c).not.toMatch(/^\s*[=+\-@]/);
       expect(post({ op: 'score', player, run, name: '   ', score: 5 })).toMatchObject({ ok: false });
     });
     it('scores: one row per run, filtered by difficulty, best first, ties by time, without player ids', () => {

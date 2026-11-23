@@ -157,8 +157,12 @@ function checkIds(req) {
 }
 function num(v, lo, hi) { var n = Number(v); if (!isFinite(n)) return lo; return Math.max(lo, Math.min(hi, n)); }
 function word(v, set, def) { v = String(v || ''); return set[v] ? v : def; }
-/** plain text for a cell: no leading = + - @ (no formulas), short */
-function text(v, max) { return String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').replace(/^[=+\-@]+/, '').slice(0, max); }
+/** plain text for a cell: trimmed first, then no leading = + - @ (so " =1+1" cannot become a formula), short */
+function text(v, max) {
+  var s = String(v === undefined || v === null ? '' : v).replace(/[\u0000-\u001f]/g, ' ').trim();
+  s = s.replace(/^[=+\-@\s]+/, '');
+  return s.slice(0, max).trim();
+}
 
 /** the row (1-based) for this player and run, or 0 */
 function findRun(sh, player, run) {
@@ -193,7 +197,7 @@ function opTelemetry(req) {
 /** Submit a finished campaign. One row per run: a resubmit updates the name. */
 function opScore(req) {
   checkIds(req);
-  var name = text(req.name, 16).trim();
+  var name = text(req.name, 16);
   if (!name) throw new Error('name missing');
   var row = [req.player, req.run, new Date().toISOString(), name, word(req.mode, MODES, 'campaign'), word(req.difficulty, DIFFS, 'standard'),
     String(num(req.seed, 0, 4294967295)), String(Math.round(num(req.minutes, 0, 100000))), text(req.grades, 20), String(Math.round(num(req.score, 0, 1e6)))];

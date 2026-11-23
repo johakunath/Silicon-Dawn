@@ -8,6 +8,7 @@ import { campaignScore, gradeLine } from '../sim/score';
 
 const PREFS_KEY = 'sd_telemetry_v1';
 const LOG_KEY = 'sd_runlog_v1';
+const SCORES_KEY = 'sd_scores_submitted_v1';
 const KEEP_LOGS = 5;
 const UPLOAD_EVERY_MS = 2 * 60 * 1000;
 const MAX_EVENTS = 300;
@@ -160,12 +161,13 @@ export class Telemetry {
     setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   }
 
-  private async post(body: Record<string, unknown>, keepalive = false): Promise<any> {
+  /** `withPlayer`: attach the random player id. Only telemetry (with consent) and a score the player submits do. */
+  private async post(body: Record<string, unknown>, keepalive = false, withPlayer = true): Promise<any> {
     const url = this.url().trim();
     const ctl = new AbortController();
     const timer = setTimeout(() => ctl.abort(), 25000);
     try {
-      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ v: 1, player: this.prefs.player, ...body }), redirect: 'follow', signal: ctl.signal, keepalive });
+      const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ v: 1, ...(withPlayer ? { player: this.prefs.player } : {}), ...body }), redirect: 'follow', signal: ctl.signal, keepalive });
       const j = await res.json();
       if (!j.ok) throw new Error(j.error ?? 'request failed');
       this.lastError = '';
@@ -196,12 +198,24 @@ export class Telemetry {
     if (!n) throw new Error('type a name first');
     this.prefs.name = n; this.savePrefs();
     if (!this.log) this.begin(s);
+    this.rememberScore(this.log!.run);
     await this.post({ op: 'score', run: this.log!.run, name: n, mode: s.mode, difficulty: s.difficulty, seed: s.seed, minutes: Math.round(s.time / 60), grades: gradeLine(s), score: campaignScore(s) });
   }
 
+  /** Read the score sheet. Sends no player id: "mine" is marked here from the runs this device submitted. */
   async scores(difficulty: string, mode = 'campaign'): Promise<ScoreRow[]> {
-    const r = await this.post({ op: 'scores', mode, difficulty, limit: 20 });
-    return (r.scores ?? []) as ScoreRow[];
+    const r = await this.post({ op: 'scores', mode, difficulty, limit: 20 }, false, false);
+    const mine = this.submittedRuns();
+    return ((r.scores ?? []) as ScoreRow[]).map((x) => ({ ...x, mine: mine.includes(String(x.run)) }));
+  }
+
+  private submittedRuns(): string[] {
+    try { const v = JSON.parse(localStorage.getItem(SCORES_KEY) ?? '[]'); return Array.isArray(v) ? v.map(String) : []; } catch { return []; }
+  }
+  private rememberScore(run: string) {
+    const all = this.submittedRuns().filter((r) => r !== run);
+    all.push(run);
+    try { localStorage.setItem(SCORES_KEY, JSON.stringify(all.slice(-50))); } catch { /* ignore */ }
   }
 }
 

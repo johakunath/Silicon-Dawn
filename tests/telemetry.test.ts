@@ -45,3 +45,36 @@ describe('telemetry helpers', () => {
     expect(text.length).toBeLessThan(30000);
   });
 });
+
+describe('telemetry client privacy', () => {
+  async function client(consent: 'yes' | 'no' | null) {
+    const store = new Map<string, string>();
+    const sent: any[] = [];
+    const g = globalThis as any;
+    g.localStorage = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); } };
+    g.window = { setInterval: () => 0 };
+    g.document = { addEventListener() {}, visibilityState: 'visible' };
+    g.fetch = async (_url: string, init: any) => { const body = JSON.parse(init.body); sent.push(body); return { json: async () => ({ ok: true, scores: [{ run: 'aaaaaaaaaa', name: 'X', score: 1, minutes: 1, grades: '', at: '' }] }) }; };
+    store.set('sd_telemetry_v1', JSON.stringify({ consent, player: 'k3v9q2m7xa', name: '' }));
+    const { Telemetry } = await import('../src/ui/telemetry');
+    return { t: new Telemetry(() => 'https://script.google.com/macros/s/x/exec', '1.0.0'), sent };
+  }
+  it('reading the score sheet sends no player id, with or without consent', async () => {
+    for (const c of ['no', null, 'yes'] as const) {
+      const { t, sent } = await client(c);
+      await t.scores('standard');
+      expect(sent.at(-1).op).toBe('scores');
+      expect(sent.at(-1).player).toBeUndefined();
+    }
+  });
+  it('without consent nothing is uploaded; with consent the run summary goes out', async () => {
+    const { t, sent } = await client('no');
+    const s = createState(3);
+    t.observe(s);
+    await t.flush(false);
+    expect(sent.length).toBe(0);
+    t.setConsent('yes');
+    await t.flush(false);
+    expect(sent.some((b) => b.op === 'telemetry' && b.player === 'k3v9q2m7xa')).toBe(true);
+  });
+});
