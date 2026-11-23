@@ -9,7 +9,7 @@ import { capexOf, costPerKCompute, keepLevel, liveByType, overdraftFloor, powerP
 import { COST_LINES, INCOME_LINES, timeOfDay } from '../sim/state';
 import type { CostLine, GameState, IncomeLine } from '../sim/state';
 import type { BuildingDef, ItemId } from '../sim/types';
-import { itemIcon } from './icons';
+import { itemIcon, thumb } from './icons';
 import {
   canEnrolDr, canSignFixed, canUpgradeGrid, depreciation, drInForce, drPayPerSec, fixedActive, gridUpgradeCost, importCap, requestGridUpgrade, setDr, signFixed,
 } from '../sim/operations';
@@ -85,10 +85,26 @@ function costCentre(d: BuildingDef): string {
 interface Snap { t: number; credits: number; income: Record<IncomeLine, number>; costs: Record<CostLine, number>; exported: Partial<Record<ItemId, number>> }
 
 const WINDOW = 180; // seconds of sim time for the per-minute rates
+/** per-type net history: one sample every TREND_STEP seconds over the last TREND_SPAN seconds */
+const TREND_STEP = 5, TREND_SPAN = 180;
+
+type SortKey = 'name' | 'count' | 'util' | 'opex' | 'value' | 'net' | 'payback';
+interface Row { type: string; name: string; count: number; util: number; opex: number; value: number; net: number; payback: number | null; compute: number; earns: boolean; capex: number }
+const GROUPS: { id: string; icon: string; name: string; cats: string[] }[] = [
+  { id: 'prod', icon: '⚙', name: 'PRODUCTION', cats: ['extract', 'refine'] },
+  { id: 'it', icon: '◈', name: 'COMPUTE & COOLING', cats: ['compute', 'cooling'] },
+  { id: 'work', icon: '△', name: 'WORKLOADS', cats: ['workload'] },
+  { id: 'power', icon: '⚡', name: 'POWER', cats: ['power'] },
+  { id: 'other', icon: '▣', name: 'LOGISTICS & SUPPORT', cats: ['logistics', 'special', 'core'] },
+];
 const HISTORY = 600; // seconds of balance history for the sparkline
 
 export class Ledger {
   private snaps: Snap[] = [];
+  private trend = new Map<string, number[]>();
+  private trendAt = -Infinity;
+  private sortKey: SortKey = 'net';
+  private sortDesc = true;
   /** set once the player has opened the ledger (tutorial step) */
   opened = false;
   private state: GameState | null = null;
@@ -96,7 +112,19 @@ export class Ledger {
   /** Record the economy totals (call a few times per second; keeps one snapshot per sim-second). */
   sample(s: GameState) {
     const last = this.snaps[this.snaps.length - 1];
-    if (this.state !== s || (last && s.time < last.t)) { this.snaps = []; this.state = s; }
+    if (this.state !== s || (last && s.time < last.t)) { this.snaps = []; this.state = s; this.trend.clear(); this.trendAt = -Infinity; }
+    if (s.time - this.trendAt >= TREND_STEP) {
+      this.trendAt = s.time;
+      const seen = new Set<string>();
+      for (const r of this.rowsOf(s)) {
+        seen.add(r.type);
+        const h = this.trend.get(r.type) ?? [];
+        h.push(r.net);
+        if (h.length > TREND_SPAN / TREND_STEP) h.shift();
+        this.trend.set(r.type, h);
+      }
+      for (const k of [...this.trend.keys()]) if (!seen.has(k)) this.trend.delete(k);
+    }
     if (last && s.time - last.t < 1) return;
     const e = s.econ;
     this.snaps.push({ t: s.time, credits: e.credits, income: { ...e.income }, costs: { ...e.costs }, exported: { ...e.exported } });
@@ -161,21 +189,6 @@ export class Ledger {
     const costRows: [string, number, string][] = r ? COST_LINES.map((l): [string, number, string] => [COST_NAME[l], r.costs[l], COST_HINT[l]]) : [];
     const lumpy = r && (r.income.funding > 0 || r.income.grants > 0) ? '<div class="dim" style="font-size:13px">Funding rounds and grants are one-off payments.</div>' : '';
 
-    // per building
-    const rows = liveByType(s).map((t) => {
-      const d = BUILDING[t.type];
-      const net = t.value - t.opex;
-      let netCell = '', pay = '';
-      if (t.compute > 0) netCell = `<td colspan="2" class="am">${cr((t.opex / t.compute) * 1000)} per 1k compute</td>`;
-      else if (t.value > 0) {
-        netCell = `<td class="${net >= 0 ? 'g' : 'r'}">${sign(net)}</td>`;
-        pay = t.payback !== null ? `<td class="${t.payback <= 15 ? 'g' : 'am'}">${t.payback < 1 ? '<1' : fmt(t.payback)} min</td>` : '<td class="r">never</td>';
-        netCell += pay;
-      } else if (unitEcon(s, d).value > 0) netCell = `<td colspan="2" class="dim">idle right now</td>`;
-      else netCell = `<td colspan="2" class="dim">${costCentre(d)}</td>`;
-      return `<tr><td>${d.name}</td><td>${t.count}</td><td>${Math.round(t.util * 100)}%</td><td>${fmt(t.capex)}</td><td>${fmt(t.opex)}</td><td>${t.value > 0 ? fmt(t.value) : '—'}</td>${netCell}</tr>`;
-    }).join('');
-
     // exports
     // only items this era can make (or that are already in stock)
     const era = s.mode === 'sandbox' ? 5 : s.era;
@@ -191,12 +204,81 @@ export class Ledger {
       <div class="lgrid"><div><h3 class="g">INCOME ${r ? sign(r.inc) + ' / min' : ''}</h3>${r ? bars(incRows, 'g') + lumpy : '<div class="dim">Measuring…</div>'}</div>
       <div><h3 class="r">COSTS ${r ? '−' + fmt(r.cost) + ' / min' : ''}</h3>${r ? bars(costRows, 'r') : '<div class="dim">Measuring…</div>'}</div>
       <div><h3 style="color:#ffe066">POWER PRICE TODAY</h3>${this.priceStrip(s)}<div class="dim" style="font-size:13px">Now ${cr(powerPrice(s) * 60)} per power-minute (average ${cr(POWER_PRICE * 60)}). Surplus sells for ${Math.round(FEED_IN * 100)}% of the price. Batteries let you buy cheap and use it at the peak.</div></div></div>
-      <h3 class="lh">PER BUILDING (live, at average power price)</h3>
-      <div class="ltab"><table class="stab"><tr><th>Building</th><th>#</th><th>Use</th><th>Capex each</th><th>Opex/min</th><th>Value/min</th><th>Net/min</th><th>Payback</th></tr>${rows || '<tr><td colspan="8" class="dim">Nothing built yet.</td></tr>'}</table></div>
+      <h3 class="lh">PER BUILDING <span class="dim" style="font-size:13px;letter-spacing:0">live, per minute, at the average power price · click a column to sort</span></h3>
+      ${this.typeTable(s)}
       <h3 class="lh">EXPORTS</h3><div class="lexps">${exp}</div>${idleAccel}
       <h3 class="lh">POWER DEALS</h3>${this.deals(s)}
       <div class="kv lfoot"><span class="k">Spent on construction</span><span class="v">${cr(e.capex)}</span><span class="k">Upkeep of all buildings</span><span class="v">${cr(s.buildings.reduce((a, b) => a + upkeepOf(b.type), 0))}/min</span><span class="k">Emergency grants</span><span class="v">${e.grants}</span>${(() => { const dp = depreciation(s); return `<span class="k" data-tip="What your buildings would be worth on the books: capex written down in a straight line over ${DEPRECIATION_MIN} minutes to ${Math.round(RESIDUAL * 100)}%. No cash moves; it shows how fast hardware loses value.">Hardware book value</span><span class="v">${cr(dp.book)} (depreciating ${cr(dp.perMin)}/min, not cash)</span>`; })()}<span class="k">Demolish refund</span><span class="v">100% of capex for ${REFUND_GRACE / 60} min, then ${Math.round(REFUND_LATE * 100)}%</span></div>
       <div class="mact"><button data-codex>UNIT ECONOMICS (CODEX)</button><button class="primary" data-x>BACK</button></div></div>`;
+  }
+
+  /** Live economics per building type; gateways are credited with the market revenue they serve. */
+  private rowsOf(s: GameState): Row[] {
+    const gw = s.buildings.filter((b) => BUILDING[b.type].workload === 'inference').length;
+    return liveByType(s).map((t) => {
+      const d = BUILDING[t.type];
+      let value = t.value;
+      if (d.workload === 'inference' && gw > 0) value += s.market.revRate * 60 * (t.count / gw);
+      const net = value - t.opex;
+      const payback = value > 0 && net > 0 ? t.capex / (net / t.count) : null;
+      return { type: t.type, name: d.name, count: t.count, util: t.util, opex: t.opex, value, net, payback, compute: t.compute, earns: value > 0 || unitEcon(s, d).value > 0, capex: t.capex };
+    });
+  }
+
+  /** The per-building table: grouped by role, in-cell bars, a net band, a trend line and payback pills. */
+  private typeTable(s: GameState): string {
+    const rows = this.rowsOf(s);
+    if (!rows.length) return '<div class="dim">Nothing built yet.</div>';
+    const k = this.sortKey, dir = this.sortDesc ? -1 : 1;
+    const val = (r: Row): number | string => (k === 'name' ? r.name : k === 'payback' ? (r.payback ?? 1e9) : r[k]);
+    rows.sort((a, b) => { const x = val(a), y = val(b); return (x < y ? -1 : x > y ? 1 : 0) * dir; });
+    const maxMoney = Math.max(1, ...rows.map((r) => Math.max(r.opex, r.value)));
+    const maxNet = Math.max(1, ...rows.map((r) => Math.abs(r.net)));
+    const bar = (v: number, cls: string) => `<span class="tbar"><i class="${cls}" style="width:${Math.max(v > 0 ? 2 : 0, (v / maxMoney) * 100)}%"></i></span>`;
+    const head = (key: SortKey, label: string, cls = '') => `<th class="${cls}${k === key ? ' on' : ''}" data-sort="${key}">${label}${k === key ? (this.sortDesc ? ' ▼' : ' ▲') : ''}</th>`;
+    const spark = (type: string): string => {
+      const h = this.trend.get(type);
+      if (!h || h.length < 3) return '<span class="dim">…</span>';
+      const lo = Math.min(0, ...h), hi = Math.max(0, ...h), span = Math.max(1, hi - lo);
+      const W = 84, H = 18;
+      const pts = h.map((v, i) => `${((i / (h.length - 1)) * W).toFixed(1)},${(H - ((v - lo) / span) * H).toFixed(1)}`).join(' ');
+      const last = h[h.length - 1];
+      const zero = lo < 0 && hi > 0 ? `<line x1="0" x2="${W}" y1="${(H - ((0 - lo) / span) * H).toFixed(1)}" y2="${(H - ((0 - lo) / span) * H).toFixed(1)}" stroke="#93a4c4" stroke-opacity=".35" stroke-dasharray="2 2"/>` : '';
+      return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">${zero}<polyline points="${pts}" fill="none" stroke="${last >= 0 ? '#5dff9a' : '#ff8a8a'}" stroke-width="1.6"/></svg>`;
+    };
+    const row = (r: Row) => {
+      const d = BUILDING[r.type];
+      const u = Math.round(r.util * 100);
+      const dot = r.util >= 0.8 ? 'g' : r.util >= 0.4 ? 'am' : 'r';
+      // grid nodes and storage never "work", so a use figure would read as idle
+      const passive = (!!d.node && !d.gen && !d.battery) || !!d.storage || !!d.junction;
+      const share = Math.min(1, Math.abs(r.net) / maxNet);
+      const band = r.net >= 0 ? `rgba(93,255,154,${(0.06 + 0.3 * share).toFixed(2)})` : `rgba(255,106,106,${(0.06 + 0.3 * share).toFixed(2)})`;
+      let last: string;
+      if (r.compute > 0) last = `<span class="pill am" data-tip="Running cost per 1,000 compute this type produces">${cr((r.opex / r.compute) * 1000)}/1k</span>`;
+      else if (r.payback !== null) last = `<span class="pill ${r.payback <= 5 ? 'g' : r.payback <= 15 ? 'am' : 'r'}">${r.payback < 1 ? '<1' : fmt(r.payback)} min</span>`;
+      else if (r.earns && r.value > 0) last = '<span class="pill r">never</span>';
+      else if (r.earns) last = '<span class="dim">idle now</span>';
+      else last = `<span class="dim sm">${costCentre(d)}</span>`;
+      const valueCell = r.compute > 0 ? `<span class="dim">→ ${fmt(r.compute)} compute</span>` : r.value > 0 ? `${bar(r.value, 'g')}<b>${fmt(r.value)}</b>` : '<span class="dim">—</span>';
+      return `<tr><td class="nm"><img src="${thumb(r.type)}" alt=""><span>${r.name}</span></td><td class="num">${r.count}</td>
+        <td>${passive ? '<span class="dim">—</span>' : `<span class="ubar"><i style="width:${u}%"></i></span><span class="dot ${dot}"></span><span class="num sm">${u}%</span>`}</td>
+        <td>${bar(r.opex, 'r')}<b>${fmt(r.opex)}</b></td><td>${valueCell}</td>
+        <td class="net" style="background:${band}"><b class="${r.net >= 0 ? 'g' : 'r'}">${r.net >= 0 ? '▲' : '▼'} ${sign(r.net)}</b></td>
+        <td>${spark(r.type)}</td><td>${last}</td></tr>`;
+    };
+    let body = '';
+    for (const g of GROUPS) {
+      const rs = rows.filter((r) => g.cats.includes(BUILDING[r.type].cat));
+      if (!rs.length) continue;
+      const net = rs.reduce((a, r) => a + r.net, 0), n = rs.reduce((a, r) => a + r.count, 0);
+      const comp = rs.reduce((a, r) => a + r.compute, 0);
+      const extra = g.id === 'it' && comp > 0 ? ` · ${cr((rs.reduce((a, r) => a + r.opex, 0) / comp) * 1000)} per 1k compute` : '';
+      body += `<tr class="grp"><td colspan="5">${g.icon} ${g.name} <span class="dim">· ${n} buildings${extra}</span></td><td class="net"><b class="${net >= 0 ? 'g' : 'r'}">${sign(net)}</b></td><td colspan="2"></td></tr>`;
+      body += rs.map(row).join(''); // sorted inside each group
+    }
+    return `<div class="ltab"><table class="ltable"><thead><tr>${head('name', 'BUILDING')}${head('count', '#', 'num')}${head('util', 'USE')}${head('opex', 'COST')}${head('value', 'VALUE')}${head('net', 'NET')}<th>TREND 3 MIN</th>${head('payback', 'PAYBACK')}</tr></thead><tbody>${body}</tbody></table>
+      <div class="dim sm lkey"><span class="dot g"></span> busy 80%+ · <span class="dot am"></span> 40–80% · <span class="dot r"></span> under 40%: idle hardware still pays upkeep · pills: payback <span class="g">≤ 5 min</span>, <span class="am">≤ 15 min</span>, <span class="r">longer or never</span> · Gateways earn their share of market revenue.</div></div>`;
   }
 
   /** Power deals: grid connection, fixed-price contract, peak curtailment. */
@@ -216,6 +298,12 @@ export class Ledger {
 
   /** Handle a pointer event inside the ledger (export switches, power deals). Returns true if it changed something. */
   handle(target: HTMLElement, s: GameState): boolean {
+    const sort = target.closest<HTMLElement>('[data-sort]');
+    if (sort) {
+      const k = sort.dataset.sort as SortKey;
+      if (this.sortKey === k) this.sortDesc = !this.sortDesc; else { this.sortKey = k; this.sortDesc = k !== 'name'; }
+      return true;
+    }
     const deal = target.closest<HTMLElement>('[data-deal]');
     if (deal) {
       if (deal.dataset.deal === 'grid') return requestGridUpgrade(s);

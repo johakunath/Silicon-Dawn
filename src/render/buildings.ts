@@ -9,6 +9,7 @@ interface TypeSlot {
   body: THREE.InstancedMesh;
   glow?: THREE.InstancedMesh;
   spin?: THREE.InstancedMesh;
+  fill?: THREE.InstancedMesh;
   ids: number[];
 }
 
@@ -50,6 +51,7 @@ export class BuildingLayer {
       this.group.remove(t.body); t.body.dispose();
       if (t.glow) { this.group.remove(t.glow); t.glow.dispose(); }
       if (t.spin) { this.group.remove(t.spin); t.spin.dispose(); }
+      if (t.fill) { this.group.remove(t.fill); t.fill.dispose(); }
     }
     this.types.clear(); this.slot.clear(); this.known.clear(); this.born.clear(); this.angle.clear();
     this.s = s;
@@ -79,6 +81,13 @@ export class BuildingLayer {
       this.group.add(spin);
       t.spin = spin;
     }
+    if (m.fill) {
+      const fill = new THREE.InstancedMesh(m.fill.geo, this.glowMat, max);
+      fill.count = 0; fill.frustumCulled = false;
+      fill.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(max * 3).fill(1), 3);
+      this.group.add(fill);
+      t.fill = fill;
+    }
     this.types.set(type, t);
     return t;
   }
@@ -90,6 +99,7 @@ export class BuildingLayer {
     t.body.count = t.ids.length;
     if (t.glow) t.glow.count = t.ids.length;
     if (t.spin) t.spin.count = t.ids.length;
+    if (t.fill) t.fill.count = t.ids.length;
     this.slot.set(b.id, { type: b.type, i });
     if (animate && !this.reducedMotion) this.born.set(b.id, now);
     this.writeMatrix(b, t, i, 1);
@@ -104,7 +114,7 @@ export class BuildingLayer {
       // move last into the hole
       const lastId = t.ids[last];
       t.ids[sl.i] = lastId;
-      for (const mesh of [t.body, t.glow, t.spin]) {
+      for (const mesh of [t.body, t.glow, t.spin, t.fill]) {
         if (!mesh) continue;
         mesh.getMatrixAt(last, this.tmpM);
         mesh.setMatrixAt(sl.i, this.tmpM);
@@ -119,6 +129,7 @@ export class BuildingLayer {
     t.body.count = t.ids.length;
     if (t.glow) t.glow.count = t.ids.length;
     if (t.spin) t.spin.count = t.ids.length;
+    if (t.fill) { t.fill.count = t.ids.length; t.fill.instanceMatrix.needsUpdate = true; if (t.fill.instanceColor) t.fill.instanceColor.needsUpdate = true; }
     t.body.instanceMatrix.needsUpdate = true;
     if (t.glow) { t.glow.instanceMatrix.needsUpdate = true; if (t.glow.instanceColor) t.glow.instanceColor.needsUpdate = true; }
     if (t.spin) t.spin.instanceMatrix.needsUpdate = true;
@@ -208,6 +219,23 @@ export class BuildingLayer {
         if (b.id === this.hoverId) this.tmpC.multiplyScalar(1.25 + 0.25 * Math.sin(now * 9)); // hover blink
         if (b.id === this.dangerId) this.tmpC.setRGB(1.8, 0.45, 0.4).multiplyScalar(0.8 + 0.25 * Math.sin(now * 12)); // demolish target
         t.body.setColorAt(i, this.tmpC);
+        // level gauge on the building (battery charge): the glowing fill rises from the bottom of its window
+        if (t.fill && m.fill) {
+          const d = BUILDING[b.type];
+          const cap = (d.battery?.capacity ?? 1) * s.fx.batteryMul;
+          const f = Math.max(0, Math.min(1, b.charge / cap));
+          const sc = b0 !== undefined ? Math.min(1, (now - b0) / 0.5) : 1;
+          const h = baseHeight(s.world, b.x, b.y, d.size);
+          this.tmpV.set(b.x + d.size / 2, h + m.fill.baseY * sc, b.y + d.size / 2);
+          this.tmpQ.identity();
+          this.tmpS.set(sc, Math.max(0.001, f * sc), sc);
+          this.tmpM.compose(this.tmpV, this.tmpQ, this.tmpS);
+          t.fill.setMatrixAt(i, this.tmpM);
+          // green when healthy, amber when low, red when nearly empty; brighter and pulsing while it charges
+          const glowK = b.status === 'charging' ? 0.8 + (this.reducedMotion ? 0 : 0.3 * pulse) : b.status === 'discharging' ? 0.7 : 0.55;
+          if (f > 0.5) this.tmpC.setRGB(0.15, 1.0, 0.4); else if (f > 0.2) this.tmpC.setRGB(1.0, 0.6, 0.08); else this.tmpC.setRGB(1.0, 0.15, 0.12);
+          t.fill.setColorAt(i, this.tmpC.multiplyScalar(glowK));
+        }
         // spin
         if (t.spin && m.spin) {
           const d = BUILDING[b.type];
@@ -228,6 +256,7 @@ export class BuildingLayer {
       if (t.glow?.instanceColor) t.glow.instanceColor.needsUpdate = true;
       if (t.body.instanceColor) t.body.instanceColor.needsUpdate = true;
       if (t.spin) t.spin.instanceMatrix.needsUpdate = true;
+      if (t.fill) { t.fill.instanceMatrix.needsUpdate = true; if (t.fill.instanceColor) t.fill.instanceColor.needsUpdate = true; }
     }
   }
 
