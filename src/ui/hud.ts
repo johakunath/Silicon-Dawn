@@ -73,6 +73,7 @@ export class Hud {
   rates = new RateTracker();
   ledger = new Ledger();
   market = new MarketPanel();
+  private scoresReq = 0;
   /** opt-in telemetry, local run log and the friends score sheet (uses the cloud-save script URL) */
   telemetry = new Telemetry(() => { const u = this.g.cloud?.cfg.url ?? ''; return validUrl(u) ? u : DEFAULT_CLOUD_URL; }, GAME_VERSION);
   tutorial!: Tutorial;
@@ -984,11 +985,14 @@ export class Hud {
     }
     m.innerHTML = shell('<div class="dim">Loading…</div>');
     bind(); this.show('scores');
+    // only the latest request may draw: switching difficulty while one is pending discards the older answer
+    const req = ++this.scoresReq;
+    const current = () => this.openModal === 'scores' && req === this.scoresReq;
     t.scores(difficulty).then((rows) => {
-      if (this.openModal !== 'scores') return;
+      if (!current()) return;
       m.innerHTML = shell(scoreTable(rows));
       bind();
-    }).catch((e) => { if (this.openModal === 'scores') { m.innerHTML = shell(`<div class="r">Could not load scores: ${String((e as Error).message ?? e).replace(/[<>&]/g, '')}</div>`); bind(); } });
+    }).catch((e) => { if (current()) { m.innerHTML = shell(`<div class="r">Could not load scores: ${String((e as Error).message ?? e).replace(/[<>&]/g, '')}</div>`); bind(); } });
   }
 
   showEraBanner(era: number) {

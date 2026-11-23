@@ -142,6 +142,8 @@ export function step(s: GameState) {
   const G = s.grids;
   for (const g of G) { g.gen = 0; g.demand = 0; g.stored = 0; g.capacity = 0; }
   const varGen = new Float32Array(G.length), firmCap = new Float32Array(G.length), gasCap = new Float32Array(G.length), cleanGen = new Float32Array(G.length), coreGen = new Float32Array(G.length);
+  // grids tied to the colony grid at the Core: surplus sells even while curtailment stops imports (a grid fault cuts the tie)
+  const coreTie = new Uint8Array(G.length);
   for (let i = 0; i < B.length; i++) {
     const b = B[i], d = BUILDING[b.type];
     let w = 0;
@@ -178,7 +180,7 @@ export function step(s: GameState) {
           out = d.power * Math.min(1.6, wind * local) * s.fx.windMul;
           varGen[b.grid] += out; cleanGen[b.grid] += out; break;
         }
-        case 'core': out = m.firmOff || s.ops.drNow ? 0 : importCap(s); varGen[b.grid] += out; coreGen[b.grid] += out; break;
+        case 'core': out = m.firmOff || s.ops.drNow ? 0 : importCap(s); varGen[b.grid] += out; coreGen[b.grid] += out; if (!m.firmOff) coreTie[b.grid] = 1; break;
         case 'firm':
           if (b.type === 'gas') { if (!m.firmOff) { firmCap[b.grid] += d.power; gasCap[b.grid] += d.power; } }
           else { // fusion needs water
@@ -246,7 +248,7 @@ export function step(s: GameState) {
     }
     // the Core's generator is the colony grid tie: what it supplies to buildings or batteries is bought,
     // and spilled surplus from your own generators is sold
-    if (coreGen[g.id] > 0) {
+    if (coreTie[g.id]) {
       const used = D + (charge0 - charge); // demand plus energy stored this tick
       imported += Math.max(0, Math.min(coreGen[g.id], used - (V - coreGen[g.id])));
       exported += Math.max(0, charge - coreGen[g.id]);
