@@ -1,3 +1,5 @@
+import { bindCloud, cloudRows } from './cloudsave';
+import { bindGraphics, graphicsRows } from './settings';
 import * as THREE from 'three';
 import { audio } from '../audio/audio';
 import type { Game } from '../game/game';
@@ -74,6 +76,7 @@ export class Hud {
     root.addEventListener('pointerout', () => { this.pointerOverUi = false; });
     // generic rich tooltips: any element with data-tip (static html) or data-tipk (dynamic key)
     root.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') return; // touch: hold to see a tooltip (game/touch.ts)
       const el = (e.target as HTMLElement).closest('[data-tip],[data-tipk]') as HTMLElement | null;
       if (!el) { if (this.uiTip) { this.uiTip = false; this.hideTip(); } return; }
       const html = el.dataset.tip ?? this.dynTip(el.dataset.tipk!);
@@ -86,7 +89,7 @@ export class Hud {
   }
   private uiTip = false;
 
-  private dynTip(k: string): string {
+  dynTip(k: string): string {
     const s = this.g.s;
     if (k === 'power') return powerTip(s);
     if (k === 'compute') return computeTip(s);
@@ -595,7 +598,7 @@ export class Hud {
   }
 
   // ───────── tooltips ─────────
-  private tipAt(x: number, y: number, html: string) {
+  tipAt(x: number, y: number, html: string) {
     const t = this.els.tip;
     t.style.display = 'block';
     t.innerHTML = html;
@@ -814,9 +817,10 @@ export class Hud {
       <div class="setrow"><label>Reduced motion</label><button id="s-rm" class="${st.reducedMotion ? 'on' : ''}">${st.reducedMotion ? 'ON' : 'OFF'}</button></div>
       <div class="setrow"><label>Edge panning</label><button id="s-edge" class="${st.edgePan ? 'on' : ''}">${st.edgePan ? 'ON' : 'OFF'}</button></div>
       <div class="setrow"><label>UI scale</label><input type="range" min="0.8" max="1.4" step="0.05" value="${st.uiScale}" id="s-ui"></div>
+      ${graphicsRows(g)}
       <div class="setrow"><label>Performance stats</label><button id="s-fps" class="${st.showFps ? 'on' : ''}">${st.showFps ? 'SHOWN (F3)' : 'HIDDEN (F3)'}</button></div>
       <div class="mact" style="justify-content:space-between"><div style="display:flex;gap:8px"><button id="m-save">SAVE / LOAD</button><button id="m-title">MAIN MENU</button></div><button class="primary" data-x>RESUME</button></div>
-      <div style="margin-top:18px;color:#93a4c4;font-size:15px;line-height:1.6"><b>Keys:</b> WASD pan · wheel zoom · Q/E rotate · 1–9 build · L link · X demolish · Del demolish selected · P/H/N/O overlays · T tech · J guide · Z next problem · C core · F focus · M pod mode · R repair · Space pause · +/− speed · F3 stats</div></div>`;
+      <div style="margin-top:18px;color:#93a4c4;font-size:15px;line-height:1.6"><b>Keys:</b> WASD pan · wheel zoom · Q/E rotate · 1–9 build · L link · X demolish · Del demolish selected · P/H/N/O overlays · T tech · J guide · Z next problem · C core · F focus · M pod mode · R repair · Space pause · +/− speed · F3 stats<br><b>Touch:</b> drag pan · pinch zoom · twist rotate · tap place or select · hold to inspect · right-edge buttons rotate, zoom, copy, next problem · red pill cancels</div></div>`;
     const q = (id: string) => m.querySelector(id) as HTMLInputElement;
     q('#s-vol').oninput = () => { st.volume = Number(q('#s-vol').value); g.applySettings(); };
     q('#s-mus').oninput = () => { st.music = Number(q('#s-mus').value); g.applySettings(); };
@@ -825,13 +829,14 @@ export class Hud {
     q('#s-rm').onclick = () => { st.reducedMotion = !st.reducedMotion; g.applySettings(); this.openMenu(); };
     q('#s-edge').onclick = () => { st.edgePan = !st.edgePan; g.applySettings(); this.openMenu(); };
     q('#s-fps').onclick = () => { st.showFps = !st.showFps; g.applySettings(); this.openMenu(); };
+    bindGraphics(m, g, () => this.openMenu());
     q('#m-save').onclick = () => this.openSave();
     q('#m-title').onclick = () => { g.autosave(); this.showTitle(); };
     (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
     this.show('menu');
   }
 
-  openSave() {
+  openSave(cloudSetup = false) {
     const g = this.g;
     const m = this.els.save;
     const slot = (k: string) => { try { const v = localStorage.getItem(k); if (!v) return null; const d = JSON.parse(v); return d; } catch { return null; } };
@@ -840,6 +845,7 @@ export class Hud {
     m.innerHTML = `<div class="mcard panel" style="width:900px"><h1>SAVE / LOAD</h1>
       <div class="setrow"><label>Autosave</label><span style="flex:1;font-size:15px;color:#93a4c4">${desc(slot(AUTOSAVE_KEY))}</span><button data-load="${AUTOSAVE_KEY}" ${slot(AUTOSAVE_KEY) ? '' : 'disabled'}>LOAD</button></div>${rows}
       <div class="setrow"><label>Portable file</label><button id="sv-exp">EXPORT JSON</button><button id="sv-imp">IMPORT JSON</button><input type="file" id="sv-file" accept=".json,application/json" style="display:none"></div>
+      ${cloudRows(g.cloud, cloudSetup)}
       <div class="mact"><button class="primary" data-x>BACK</button></div></div>`;
     m.querySelectorAll<HTMLElement>('[data-save]').forEach((b) => (b.onclick = () => { try { localStorage.setItem(b.dataset.save!, g.saveJson()); this.toast('Saved', 'good'); audio.play('objective'); this.openSave(); } catch { this.toast('Save failed (storage full?)', 'bad'); } }));
     m.querySelectorAll<HTMLElement>('[data-load]').forEach((b) => (b.onclick = () => { const v = localStorage.getItem(b.dataset.load!); if (v && g.loadJson(v)) this.closeModals(); }));
@@ -855,6 +861,7 @@ export class Hud {
     (m.querySelector('#sv-imp') as HTMLElement).onclick = () => file.click();
     file.onchange = async () => { const f = file.files?.[0]; if (f && g.loadJson(await f.text())) this.closeModals(); };
     (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
+    bindCloud(m, g, g.cloud, (setup) => { if (this.openModal === 'save') this.openSave(setup); }, (t, k) => this.toast(t, k), () => this.closeModals());
     this.show('save');
   }
 

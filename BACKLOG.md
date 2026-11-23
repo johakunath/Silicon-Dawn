@@ -11,7 +11,7 @@ Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, 25 Vi
 | # | Epic | Depends on | Status |
 |---|---|---|---|
 | E1 | Colony economy: money, running costs, ledger | none | todo |
-| E2 | Tablet and quality profiles: touch controls, graphics profiles, cloud save | none | doing (e2-tablet-quality) |
+| E2 | Tablet and quality profiles: touch controls, graphics profiles, cloud save | none | done (e2-tablet-quality) |
 | E3 | Market and models: demand, model lifecycle, revenue | E1 | todo |
 | E4 | Operations: wear, Service Center, power deals, light hardware tiers | E1 | todo |
 | E5 | Decision events and politics | E1 (E3 helps) | todo |

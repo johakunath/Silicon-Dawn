@@ -9,11 +9,15 @@ import { loadFromString, saveToString } from '../sim/save';
 import { step } from '../sim/sim';
 import { GameState, TICK, createState, dayBias, hq, timeOfDay } from '../sim/state';
 import type { Building, Difficulty, Link } from '../sim/types';
+import { QualityManager } from '../render/quality';
 import { SceneRig } from '../render/scene';
 import { baseHeight } from '../render/terrain';
 import { Overlay, WorldView } from '../render/world';
 import { Hud } from '../ui/hud';
 import { badgeFor } from '../ui/status';
+import { TouchBar } from '../ui/touchbar';
+import { CloudSave } from '../ui/cloudsave';
+import { TouchControls } from './touch';
 
 const FIRST_TIPS: Record<string, string> = {
   quarry: 'Tip: extractors need a refinery. Place a Silicon Furnace nearby, and belts connect automatically.',
@@ -46,6 +50,10 @@ export class Game {
   rig: SceneRig;
   view: WorldView;
   hud: Hud;
+  quality: QualityManager;
+  cloud: CloudSave;
+  /** last input was a finger (no hover): tooltips come from long-press instead */
+  touchMode = false;
   speed = 1;
   paused = true; // until title screen dismissed
   tool: Tool = { kind: 'select' };
@@ -90,6 +98,7 @@ export class Game {
     this.view = new WorldView(this.rig, this.s);
     this.focusCore(true);
     this.hud = new Hud(this, ui);
+    this.quality = new QualityManager(this.rig, () => this.view, () => this.started && !this.paused && !this.hud.blockingModal());
     this.applySettings();
     window.addEventListener('resize', () => this.applySettings());
     // save when the tab is hidden or closed (also covers building while paused, which the timer skips)
@@ -98,6 +107,10 @@ export class Game {
     // ask the browser not to evict local saves under storage pressure (best effort, silently ignored if refused)
     navigator.storage?.persist?.().catch(() => {});
     this.bindInput(canvas);
+    new TouchControls(this, canvas);
+    new TouchBar(this, ui);
+    this.cloud = new CloudSave(this);
+    this.setTouchMode(this.quality.profile === 'performance' && matchMedia('(pointer: coarse)').matches);
     (window as any).__sd = this; // debug / screenshot hooks
   }
 
@@ -109,7 +122,8 @@ export class Game {
     this.view.particles.reduced = st.reducedMotion;
     document.documentElement.style.setProperty('--fs', `${18 * st.uiScale}px`);
     // big monitors (1440p/4K): scale the whole UI up so text stays comfortably readable
-    const auto = window.innerWidth >= 3400 ? 1.5 : window.innerWidth >= 2400 ? 1.2 : 1;
+    // small screens (11-inch tablet = 1280×800 CSS px): shrink so the 1700 px wide layout fits
+    const auto = window.innerWidth >= 3400 ? 1.5 : window.innerWidth >= 2400 ? 1.2 : window.innerWidth < 1700 ? Math.max(0.6, window.innerWidth / 1700) : 1;
     const z = st.uiScale * auto;
     const ui = document.getElementById('ui') as HTMLElement;
     ui.style.zoom = '';
@@ -268,6 +282,8 @@ export class Game {
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.zoomAt(e.clientX, e.clientY, e.deltaY > 0 ? 1.12 : 1 / 1.12); }, { passive: false });
     canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse') return; // touch and pen: see touch.ts
+      this.setTouchMode(false);
       canvas.focus();
       this.mouse.down = true; this.mouse.button = e.button; this.mouse.dragX = e.clientX; this.mouse.dragY = e.clientY; this.mouse.moved = false;
       this.mouse.lastPaint = '';
@@ -276,6 +292,9 @@ export class Game {
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch') return;
+      if (e.pointerType === 'pen' && e.buttons) return; // pen drags pan (touch.ts); pen hover still moves the cursor
+      if (e.pointerType === 'mouse' || e.pointerType === 'pen') this.setTouchMode(false);
       const dx = e.clientX - this.mouse.x, dy = e.clientY - this.mouse.y;
       this.mouse.x = e.clientX; this.mouse.y = e.clientY;
       if (this.mouse.down && ((e.buttons & 3) === 3 || (e.altKey && (e.buttons & 2)))) {
@@ -295,14 +314,15 @@ export class Game {
       }
     });
     canvas.addEventListener('pointerup', (e) => {
+      if (e.pointerType !== 'mouse') return;
       if (e.button === 2 && !this.mouse.moved) this.onSecondary();
       if (e.buttons === 0) { this.mouse.down = false; this.mouse.rotating = false; }
     });
-    canvas.addEventListener('pointerleave', () => { this.view.hovered = null; this.hud.hideTip(); });
+    canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'touch') return; this.view.hovered = null; this.hud.hideTip(); });
   }
 
   /** move the camera by a screen-space vector (pixels; +x right, +y down) */
-  private panScreen(sx: number, sy: number) {
+  panScreen(sx: number, sy: number) {
     const k = (this.rig.view * 2) / window.innerHeight;
     const right = new THREE.Vector3(Math.sin(this.rig.yaw), 0, -Math.cos(this.rig.yaw));
     const down = new THREE.Vector3(Math.cos(this.rig.yaw), 0, Math.sin(this.rig.yaw));
@@ -331,16 +351,12 @@ export class Game {
       case ' ': this.paused = !this.paused; audio.play('click'); this.hud.refreshSpeed(); e.preventDefault(); break;
       case '+': case '=': this.setSpeed(Math.min(4, this.speed * 2)); break;
       case '-': case '_': this.setSpeed(Math.max(1, this.speed / 2)); break;
-      case 'q': this.yawTarget = (Math.round((this.yawTarget - Math.PI / 4) / (Math.PI / 2)) + 1) * (Math.PI / 2) + Math.PI / 4; break;
-      case 'e': this.yawTarget = (Math.round((this.yawTarget - Math.PI / 4) / (Math.PI / 2)) - 1) * (Math.PI / 2) + Math.PI / 4; break;
+      case 'q': this.rotateStep(1); break;
+      case 'e': this.rotateStep(-1); break;
       case 'l': this.setTool(this.tool.kind === 'link' ? { kind: 'select' } : { kind: 'link', from: null }); audio.play('click'); break;
       case 'x': this.setTool(this.tool.kind === 'demolish' ? { kind: 'select' } : { kind: 'demolish' }); audio.play('click'); break;
       case 'v': this.setTool(this.tool.kind === 'move' ? { kind: 'select' } : { kind: 'move', id: null }); audio.play('click'); break;
-      case 'g': { // pipette: build more of what's under the cursor
-        const b = this.view.hovered ?? this.view.selected;
-        if (b && b.type !== 'hq') { this.setTool({ kind: 'build', type: b.type }); audio.play('click'); }
-        break;
-      }
+      case 'g': this.pipette(); break; // build more of what's under the cursor
       case 'delete': if (this.view.selected) { this.demolishBuilding(this.view.selected); } break;
       case 'p': this.setOverlay('power'); break;
       case 'h': this.setOverlay('heat'); break;
@@ -364,9 +380,28 @@ export class Game {
     }
   }
 
+  /** snap-rotate the camera by a quarter turn (+1 = Q, −1 = E) */
+  rotateStep(dir: 1 | -1) { this.yawTarget = (Math.round((this.yawTarget - Math.PI / 4) / (Math.PI / 2)) + dir) * (Math.PI / 2) + Math.PI / 4; }
+  /** free rotation (touch twist) */
+  rotateBy(rad: number) { this.yawTarget += rad; this.rig.yaw = this.yawTarget; this.rig.updateCamera(); }
+  /** pan inertia after a drag, in screen pixels per frame */
+  fling(vx: number, vy: number) { this.vel.set(vx, vy); }
+  /** pipette: build more of the selected or hovered building */
+  pipette() { const b = this.view.hovered ?? this.view.selected; if (b && b.type !== 'hq') { this.setTool({ kind: 'build', type: b.type }); audio.play('click'); } }
+  setTouchMode(on: boolean) {
+    if (on === this.touchMode) return;
+    this.touchMode = on;
+    document.body.classList.toggle('touch', on);
+    if (on) { this.view.hovered = null; this.view.buildings.hoverId = -1; this.hud.hideTip(); }
+  }
+  /** a finger tap: acts like a left click at that spot and leaves the ghost there */
+  tap(px: number, py: number) { this.mouse.x = px; this.mouse.y = py; this.onPrimary(px, py, false); }
+  /** move the virtual cursor (ghost and link preview follow it) without clicking */
+  pointAt(px: number, py: number) { this.mouse.x = px; this.mouse.y = py; }
+
   setSpeed(v: number) { this.speed = v; this.paused = false; audio.play('click'); this.hud.refreshSpeed(); }
 
-  private nextProblem() {
+  nextProblem() {
     const probs = this.s.buildings.filter((b) => badgeFor(b));
     if (!probs.length) { this.hud.toast('No problems right now ✓', 'good'); return; }
     this.problemIdx = (this.problemIdx + 1) % probs.length;
@@ -382,7 +417,7 @@ export class Game {
     if (this.view.selected?.id === b.id) this.select(null);
   }
 
-  private onPrimary(px: number, py: number, painting: boolean) {
+  onPrimary(px: number, py: number, painting: boolean) {
     const s = this.s;
     const t = this.tool;
     if (t.kind === 'build') {
@@ -465,7 +500,7 @@ export class Game {
     this.select(null);
   }
 
-  private onSecondary() {
+  onSecondary() {
     if (this.tool.kind !== 'select') { this.setTool({ kind: 'select' }); audio.play('close'); }
     else if (this.view.selected || this.selectedLink) this.select(null);
   }
@@ -475,6 +510,8 @@ export class Game {
   frame = () => {
     // schedule first: one exception in a frame must not freeze the game for good
     requestAnimationFrame(this.frame);
+    // quality profile: frame cap, idle slow-down, nothing at all while the tab is hidden
+    if (!this.quality.shouldRender(performance.now())) return;
     try {
       this.tickFrame(Math.min(0.1, this.clock.getDelta()));
     } catch (e) {
@@ -607,6 +644,8 @@ export class Game {
       this.hud.ghostTip(this.mouse.x, this.mouse.y, ghostType, c, x, y, this.previewCache.length && t.kind === 'build' && s.autoLink ? this.previewCache : undefined);
       return;
     }
+    // touch has no hover: tooltips come from long-press (touch.ts), the link preview still follows the last tap
+    if (this.touchMode && !(t.kind === 'link' && t.from !== null)) return;
     const b = this.view.buildingAt(this.mouse.x, this.mouse.y);
     if (b !== this.view.hovered) { this.view.hovered = b; if (b) audio.play('hover'); }
     this.view.buildings.hoverId = b?.id ?? -1;
