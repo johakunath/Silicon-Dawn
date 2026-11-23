@@ -68,7 +68,7 @@ npx tsx scripts/uicheck.ts
 | Camera | WASD or drag with the right mouse button to pan · the wheel zooms to the cursor · Q/E rotate 90° · **LMB + RMB drag** (or Alt + RMB) rotates freely |
 | Build | Build menu, or the **hotbar** `1`–`0`. Hover a build item and press a number to assign it to that slot. LMB places, dragging paints small buildings, RMB or Esc cancels |
 | Tools (bottom bar) | `L` link (click two buildings in either order, or click a link to remove it) · `V` move · `X` demolish (100% refund) · auto-link toggle · `G` pipette |
-| Info | Hover anything for rich tooltips · `I` statistics · `J` codex · `T` tech tree · `P H N O` overlays · `Z` next problem · `C` Core |
+| Info | Hover anything for rich tooltips · `I` statistics · `K` ledger · `J` codex · `T` tech tree · `P H N O` overlays · `Z` next problem · `C` Core |
 | Misc | `M` pod mode · `R` repair · Space pause · +/− speed · F3 performance stats |
 
 A new campaign starts **paused** and opens an interactive tutorial (13 steps, with a spotlight on the exact button or map spot). You can restart it from the Codex.

@@ -5,12 +5,12 @@ Priority order, top first. Each epic is one bigger work package (WP), roughly on
 **Every WP includes:** the design loop (2 options or mockups, pick, log the decision in `docs/DESIGN.md`), tests for new rules, an autoplayer balance check (campaign still completes, no soft-lock), Codex text for new concepts, a `CHANGELOG.md` line.
 
 ## Current state (2026-11-23)
-Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, 25 Vitest tests, and an autoplayer that completes the campaign. There is no money, no market and no telemetry yet. The owner will play only once the game feels finished.
+Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, 25 Vitest tests, and an autoplayer that completes the campaign. E1 added money (credits, running costs, ledger). There is no market and no telemetry yet. The owner will play only once the game feels finished.
 
 ## Overview
 | # | Epic | Depends on | Status |
 |---|---|---|---|
-| E1 | Colony economy: money, running costs, ledger | none | doing (claude/e1-colony-economy) |
+| E1 | Colony economy: money, running costs, ledger | none | done |
 | E2 | Tablet and quality profiles: touch controls, Performance/Quality, cloud save | none | todo |
 | E3 | Market and models: demand, model lifecycle, revenue | E1 | todo |
 | E4 | Operations: wear, Service Center, power deals, light hardware tiers | E1 | todo |
@@ -25,7 +25,7 @@ E4 and E5 share hotspot files with E3, so run E1 → E3 → E4/E5 one at a time.
 
 ---
 
-## E1 Colony economy (start here)
+## E1 Colony economy (done)
 Goal: every building has a price, every minute has a cost, and the player can see whether it pays off.
 - **Design:** two economy models (for example "credits plus materials" vs. "credits replace most materials"), pick one, write balance targets per era in `docs/DESIGN.md`. Two ledger UI mockups (SVG with example values), pick one, show the owner.
 - **Sim:** `credits`; capex on build (refund rule); opex per tick (power priced by time of day, water, upkeep); income from current contracts and from selling surplus; loan or emergency grant so there is no bankrupt soft-lock. Bump the save to v3 with a migration and tests.
@@ -90,4 +90,5 @@ Goal: when the owner and friends play online, runs are logged so the game can be
 - Size: L.
 
 ## Done
+- 2026-11-23: E1 Colony economy (credits, capex and opex, exports, funding rounds, emergency grants, ledger, save v3). Follow-ups for E3: Era IV pacing runs over par on 3 of 5 seeds; the top bar overflows at 1920 px in Era IV and later (pre-existing, slightly worse with the credits chip).
 - 2026-11-23: doc review and restructure (CLAUDE.md, BACKLOG, CHANGELOG, docs/), research and top 10 ideas, deploy workflow on `main`.

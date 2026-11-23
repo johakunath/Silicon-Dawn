@@ -1,0 +1,30 @@
+/* Ledger modal and credits chip (E1). */
+/* the credits chip joins the resource row: tighter chips, and overflow runs right instead of clipping it */
+#res { justify-content: safe center; }
+#res .res { width: 98px; padding: 4px 6px; }
+#res .res .v { font-size: 23px; }
+#res .credchip { width: 112px; cursor: pointer; }
+.credchip .v { color: #ffd84a; }
+.credchip.debt .v { color: var(--red); }
+/* % of the modal, not vh: the UI layer is scaled up on big screens, so vh would overflow */
+.ledger { width: min(1240px, 95%); max-height: 92%; overflow-y: auto; box-sizing: border-box; }
+.ledger h3 { font-family: var(--display); letter-spacing: .12em; margin: 0 0 6px; color: var(--dim); }
+.ledger h3.g { color: var(--green); } .ledger h3.r { color: #ff8a8a; }
+.ledger .lh { margin-top: 18px; color: var(--cyan); }
+.ledger .g { color: var(--green); } .ledger .r { color: #ff8a8a; } .ledger .am { color: var(--amber); }
+.lkpis { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+.lkpi { flex: 1 1 160px; padding: 8px 12px; background: rgba(16, 22, 44, .9); border: 1px solid var(--line); }
+.lkpi .l { font-size: 13px; color: var(--dim); letter-spacing: .06em; }
+.lkpi .v { font-family: var(--display); font-weight: 700; font-size: 28px; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.lgrid { display: grid; grid-template-columns: 1fr 1fr 280px; gap: 26px; }
+.lrow { display: grid; grid-template-columns: 175px 1fr 56px; align-items: center; gap: 10px; font-size: 15px; padding: 2px 0; }
+.lrow .sbar { width: auto; }
+.lrow b { text-align: right; font-family: var(--display); font-variant-numeric: tabular-nums; }
+.ltab { overflow-x: auto; }
+.ltab .stab td:first-child { white-space: nowrap; }
+.lexps { display: flex; flex-wrap: wrap; gap: 8px; }
+.lexp { font-size: 15px; letter-spacing: .02em; border-color: #34405a; color: var(--dim); }
+.lexp.on { border-color: var(--green); color: var(--text); background: rgba(93, 255, 154, .08); }
+.lexp .ic { vertical-align: -3px; }
+.lfoot { max-width: 620px; margin-top: 16px; }
+@media (max-width: 900px) { .lgrid { grid-template-columns: 1fr; } }

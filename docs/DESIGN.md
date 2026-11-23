@@ -27,7 +27,15 @@ Build infrastructure (capex) → run it (opex: power, water, upkeep, service) �
 - Income: inference revenue, training contracts, selling surplus materials or power.
 - Ledger: income vs. costs per minute, payback per building, cost per compute unit, utilisation.
 - Safety: no bankrupt soft-lock (a loan or an emergency grant with a penalty).
-- Open questions for the design loop: do materials stay (yes, likely, for logistics fun) and how do credits and materials split the cost; ledger layout.
+
+**Built in E1 (model A, see decision log).** All numbers live in `src/sim/data/economy.ts`.
+- Capex: credits on top of the material cost. Demolish refunds all materials, all credits for 2 minutes, then 50%.
+- Opex: upkeep per building per minute; power bought through the Command Core (its generator is the colony grid tie) at a time-of-day price (cheap at noon, peak at dusk, average ¢1.8 per power-minute); gas fuel per unit generated; water per unit pumped (3× during a water restriction).
+- Income: exports of metal, silicon and chips above a keep level (enough to build any building of the era, at least 100/60/40 × era; accelerators are held by default); surplus power sold at 50% of the price; contract payouts (¢0.25 per training unit, ¢0.4 per inference compute-second); a funding round when an era starts (¢800, 3,500, 6,000, 5,000 for eras II to V); a Core stipend of ¢30/min.
+- Debt: a negative balance blocks building and costs 3%/min. Below −¢250 × era an emergency grant resets the balance to +¢100 × era and multiplies that era's efficiency score by 0.85.
+- Belts out of storage stop at a build reserve (enough for any one building of the era, 40 to 120), so a busy base can always afford its next building.
+
+**Balance targets (autoplayer, standard).** Full-load payback: Era I extractors and refiners 1–5 min, Chip Fab ~5 min, Accelerator Fab ~8 min, Fusion ~9 min, wind and gas 15–25 min, batteries and cooling never on their own (cost centres). Money should bind at era starts (capex bursts after a funding round), not stall a running base. Measured on 5 seeds (20261119, 4242, 777, 99, 31337) after E1: campaign finishes in 105–138 sim-minutes (total par 138); per era I 7–8, II 9–14, III 13–24, IV 19–72, V 11–75 min. Era IV runs over its 40-minute par on 3 of 5 seeds and is the first place to look in the E3 balance pass.
 
 ### 2. Market and model lifecycle
 - Colony demand segments (for example chat, code, enterprise, science, media) grow over time, each with price, latency and uptime needs.
@@ -65,3 +73,7 @@ Severity scales with difficulty.
 | 2026-11-23 | Hardware generations become maintenance and service coverage; no forced GPU swaps | Replacing stacks every few years would be tedious |
 | 2026-11-23 | Anno-style citizens parked in `docs/IDEAS.md` | Big pivot, owner undecided |
 | 2026-11-23 | Owner does not playtest until the game feels done; telemetry first | Keep the first play fresh |
+| 2026-11-23 | E1 economy model A "credits on top of materials" over B "credits replace materials" | A keeps the logistics game (pillars 1, 2) and adds money as a second constraint, which mirrors real capex (bill of materials plus installation). B would make belts pointless for construction. Risk of two currencies is handled by automatic exports above a keep level. |
+| 2026-11-23 | Funding round at each era start | Without it the autoplayer needed 2–3× longer per era. It also teaches the real pattern: AI build-outs are financed before they earn. |
+| 2026-11-23 | Power is bought and sold only through the Command Core (grid tie) | Own generators have no marginal cost, so a time-of-day price only means something at the tie. Grid import deals and curtailment payments stay in E4. |
+| 2026-11-23 | Ledger option A "statement modal" over option B "waterfall dock" | A shows payback for every building type (the learning goal), fits next to the Statistics screen, and takes no space from objectives and contracts. The power price strip from B was kept inside A. |

@@ -200,7 +200,7 @@ export function unitEcon(s: GameState, d: BuildingDef, load = 1): UnitEcon {
   }
   for (const [it, r] of Object.entries(d.outputs ?? {}) as [ItemId, number][]) value += r * (PRICE[it] ?? 0) * perMin;
   for (const [it, r] of Object.entries(d.inputs ?? {}) as [ItemId, number][]) value -= r * (PRICE[it] ?? 0) * perMin;
-  const compute = (d.outputs?.compute ?? 0) * perMin;
+  const compute = d.it ? (d.outputs?.compute ?? 0) * perMin : 0; // switches only pass compute through
   const net = value - opex;
   const payback = value > 0 && net > 0 ? capex / net : null;
   return { capex, opex, value, payback, compute };
@@ -242,7 +242,7 @@ export function liveByType(s: GameState): TypeLive[] {
       if (d.outputs?.water) opex += d.outputs.water * a * WATER_PRICE * 60;
       if (d.power > 0 && d.gen && d.gen !== 'core') value += Math.max(0, -b.pw) * POWER_PRICE * 60;
       for (const [it, r] of Object.entries(d.outputs ?? {}) as [ItemId, number][]) {
-        if (it === 'compute') compute += r * a * 60 * s.fx.computeMul;
+        if (it === 'compute') { if (d.it) compute += r * a * 60 * s.fx.computeMul; }
         else value += r * a * (PRICE[it] ?? 0) * 60;
       }
       for (const [it, r] of Object.entries(d.inputs ?? {}) as [ItemId, number][]) value -= r * a * (PRICE[it] ?? 0) * 60;

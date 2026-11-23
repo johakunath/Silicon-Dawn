@@ -24,6 +24,7 @@ import { CHAPTERS } from './codex';
 import { Tutorial } from './tutorial';
 import { TECH } from '../sim/data/tech';
 import { badgeFor, explain } from './status';
+import { Ledger, affordable, creditCostHtml } from './ledger';
 
 const h = (tag: string, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 const fmt = (v: number) => (Math.abs(v) >= 10000 ? (v / 1000).toFixed(1) + 'k' : Math.abs(v) >= 100 ? Math.round(v).toString() : Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1));
@@ -60,6 +61,7 @@ export class Hud {
   private openModal: string | null = null;
   private lastSimT = 0;
   rates = new RateTracker();
+  ledger = new Ledger();
   tutorial!: Tutorial;
   hoveredPaletteType: string | null = null;
   private codexCh = 'start';
@@ -90,6 +92,7 @@ export class Hud {
     const s = this.g.s;
     if (k === 'power') return powerTip(s);
     if (k === 'compute') return computeTip(s);
+    if (k === 'credits') return this.ledger.tipHtml(s);
     if (k.startsWith('res:')) return resourceTip(s, this.rates, k.slice(4) as ItemId | 'rp');
     if (k.startsWith('def:')) return defTip(s, BUILDING[k.slice(4)]);
     if (k.startsWith('hot:')) { const t = this.hotbar[Number(k.slice(4))]; return t ? defTip(s, BUILDING[t]) + '<br><span class="dim">Hover a build item and press a number key to change this slot.</span>' : '<b>Empty hotbar slot</b><br>Hover a build item in the menu and press this number to assign it.'; }
@@ -120,6 +123,8 @@ export class Hud {
       <div id="clock" data-tipk="clock"></div><div id="speed"></div>
       <button id="btn-stats" data-tip="<b>Statistics</b> (I)<br>Production and consumption per minute for every item, and power by source and consumer.">STATS <kbd>I</kbd></button><button id="btn-tech" data-tip="<b>Technology</b> (T)<br>Spend research on upgrades. Branches: efficiency, capacity, reliability.">TECH <kbd>T</kbd></button><button id="btn-guide" data-tip="<b>Codex</b> (J)<br>Short chapters on controls, power, logistics, ratios and every building.">CODEX <kbd>J</kbd></button><button id="btn-menu" data-tip="<b>Menu</b> (Esc)<br>Settings, save & load, restart the tutorial.">☰</button>`;
     this.els.res = top.querySelector('#res')!;
+    // pointerdown, not click: the chip is re-rendered a few times per second, which can split a click
+    this.els.res.addEventListener('pointerdown', (e) => { if ((e.target as HTMLElement).closest('.credchip')) this.openLedger(); });
     const sp = top.querySelector('#speed')!;
     for (const [lbl, v] of [['❚❚', 0], ['1×', 1], ['2×', 2], ['4×', 4]] as const) {
       const b = h('button', '', lbl);
@@ -175,7 +180,7 @@ export class Hud {
     add('fps', h('div'));
     add('banner', h('div'));
     // modals
-    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats']) {
+    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger']) {
       const m = add(id, h('div', 'modal'));
       m.addEventListener('pointerdown', (e) => { if (e.target === m && id !== 'title' && id !== 'finale') this.closeModals(); });
     }
@@ -211,11 +216,11 @@ export class Hud {
       if (!unlocked && d.era > s.era + 1 && s.mode !== 'sandbox') continue;
       n++;
       const cost = costOf(s, d);
-      const el = h('div', 'bitem clickable' + (unlocked ? '' : ' locked') + (unlocked && !canAfford(s, cost) ? ' poor' : ''));
+      const el = h('div', 'bitem clickable' + (unlocked ? '' : ' locked') + (unlocked && !affordable(s, d) ? ' poor' : ''));
       el.dataset.type = d.id;
       const lr = lockReason(s, d);
       const slot = this.hotbar.indexOf(d.id);
-      el.innerHTML = `<img src="${thumb(d.id)}" alt=""><div><div class="n">${d.name}</div><div class="s">${lr && !unlocked ? '🔒 ' + lr : d.short}</div><div class="cost">${unlocked ? costHtml(s, cost) : ''}</div></div>${slot >= 0 ? `<kbd class="hk">${(slot + 1) % 10}</kbd>` : ''}${unlocked && !this.newSeen.has(d.id) ? '<span class="new">NEW</span>' : ''}`;
+      el.innerHTML = `<img src="${thumb(d.id)}" alt=""><div><div class="n">${d.name}</div><div class="s">${lr && !unlocked ? '🔒 ' + lr : d.short}</div><div class="cost">${unlocked ? costHtml(s, cost) + creditCostHtml(s, d.id) : ''}</div></div>${slot >= 0 ? `<kbd class="hk">${(slot + 1) % 10}</kbd>` : ''}${unlocked && !this.newSeen.has(d.id) ? '<span class="new">NEW</span>' : ''}`;
       el.dataset.tipk = 'def:' + d.id;
       el.onmouseleave = () => { this.hoveredPaletteType = null; };
       el.onclick = () => { if (!unlocked) { audio.play('error'); return; } this.newSeen.add(d.id); this.g.setTool({ kind: 'build', type: d.id }); audio.play('click'); };
@@ -275,7 +280,7 @@ export class Hud {
     const hint = this.els.hint;
     if (t.kind === 'build') hint.innerHTML = `<b>LMB</b> place · drag to paint · <b>RMB</b>/<b>Esc</b> cancel · ${this.g.s.autoLink ? '<b style="color:#6fe9ff">cyan dashes</b> = links it will make' : 'auto-link <b>OFF</b>'} · <b style="color:#ffd84a">yellow</b> = power hookup`;
     else if (t.kind === 'link') hint.innerHTML = t.from === null ? '<b>LINK:</b> click a building (source or target, either order) · click a glowing link to remove it · <b>Esc</b> cancel' : `<b>LINK:</b> now click the other building for ${BUILDING[this.g.s.byId.get(t.from)?.type ?? 'hq'].name} · <b>Shift</b> to chain · <b>RMB</b> cancel`;
-    else if (t.kind === 'demolish') hint.innerHTML = '<b>DEMOLISH:</b> click a building or a link (it glows red) · <b>100% refund</b> · <b>Esc</b> cancel';
+    else if (t.kind === 'demolish') hint.innerHTML = '<b>DEMOLISH:</b> click a building or a link (it glows red) · <b>full refund</b> (credits: half after 2 min) · <b>Esc</b> cancel';
     else if (t.kind === 'move') hint.innerHTML = t.id === null ? '<b>MOVE:</b> click the building to pick up · <b>Esc</b> cancel' : '<b>MOVE:</b> click the new spot · links in range are kept · <b>RMB</b> cancel';
     else hint.innerHTML = '<b>WASD</b>/RMB-drag pan · <b>wheel</b> zoom · <b>Q/E</b> or <b>L+R drag</b> rotate · <b>G</b> pipette · <b>Z</b> next problem · <b>Space</b> pause';
   }
@@ -330,11 +335,12 @@ export class Hud {
     for (const k of SHOWN_RES) this.lastStock[k] = s.stock[k] ?? 0;
     void sdt;
     this.rates.sample(s);
+    this.ledger.sample(s);
     const era = ERAS[s.era - 1];
     this.els.topbar.querySelector('#erachip')!.innerHTML = s.mode === 'sandbox' ? 'SANDBOX' : `ERA ${['I', 'II', 'III', 'IV', 'V'][s.era - 1]} · ${era.name.toUpperCase()}`;
     const res = this.els.res;
     const show = SHOWN_RES.filter((k) => k === 'metal' || k === 'silicon' || (s.stock[k] ?? 0) > 0 || (k === 'chips' && s.era >= 2) || (k === 'accel' && s.era >= 4));
-    const html = show.map((k) => `<div class="res" data-tipk="res:${k}">${itemIcon(k, 22)}<div><span class="v">${fmt(s.stock[k] ?? 0)}</span><span class="r">${(this.rate[k] ?? 0) >= 0 ? '+' : ''}${fmt((this.rate[k] ?? 0) * 60)}/min</span></div></div>`).join('')
+    const html = this.ledger.chipHtml(s) + show.map((k) => `<div class="res" data-tipk="res:${k}">${itemIcon(k, 22)}<div><span class="v">${fmt(s.stock[k] ?? 0)}</span><span class="r">${(this.rate[k] ?? 0) >= 0 ? '+' : ''}${fmt((this.rate[k] ?? 0) * 60)}/min</span></div></div>`).join('')
       + `<div class="res" data-tipk="res:rp">${itemIcon('rp', 22)}<div><span class="v">${fmt(s.rp)}</span><span class="r">+${fmt(this.rates.rpPerMin())}/min</span></div></div>`;
     if (res.innerHTML !== html) res.innerHTML = html;
     // power
@@ -374,7 +380,7 @@ export class Hud {
     this.els.build.querySelectorAll<HTMLElement>('.bitem').forEach((el) => {
       const d = BUILDING[el.dataset.type!];
       if (!d || !isUnlocked(s, d)) return;
-      el.classList.toggle('poor', !canAfford(s, costOf(s, d)));
+      el.classList.toggle('poor', !affordable(s, d));
     });
     // delivery floaters at HQ
     const delivered = Object.values(s.stats.delivered).reduce((a, b) => a + (b ?? 0), 0);
@@ -697,7 +703,7 @@ export class Hud {
   blockingModal() { return this.openModal !== null && this.openModal !== 'score'; }
   closeModals() {
     if (this.openModal === 'title') return;
-    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats']) this.els[id].classList.remove('show');
+    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats', 'ledger']) this.els[id].classList.remove('show');
     const was = this.openModal;
     if (was) audio.play('close');
     this.openModal = null;
@@ -705,7 +711,7 @@ export class Hud {
     if (was && !this.g.started) this.showTitle();
   }
   private show(id: string) {
-    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats']) this.els[m].classList.toggle('show', m === id);
+    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger']) this.els[m].classList.toggle('show', m === id);
     this.openModal = id;
     audio.play('open');
   }
@@ -727,6 +733,27 @@ export class Hud {
     const s = this.g.s;
     const top = (['metal', 'silicon', 'chips', 'accel'] as ItemId[]).filter((k) => (s.stock[k] ?? 0) > 0 || this.rates.perMin('produced', k) > 0);
     return `<div class="ptitle" style="margin-top:10px;font-size:15px">ECONOMY (per min)</div><div class="kv">${top.map((k) => `<span class="k">${itemIcon(k, 13)} ${ITEMS[k].name}</span><span class="v"><span style="color:#5dff9a">+${fmt(this.rates.perMin('delivered', k))}</span> / <span style="color:#ff8a8a">−${fmt(this.rates.perMin('spent', k) + this.rates.perMin('consumed', k))}</span></span>`).join('')}</div>`;
+  }
+
+  openLedger() {
+    const m = this.els.ledger;
+    // re-rendered every second, so buttons are handled by delegation and the scroll position is kept
+    const render = () => {
+      const top = m.querySelector('.ledger')?.scrollTop ?? 0;
+      m.innerHTML = this.ledger.html(this.g.s);
+      const card = m.querySelector('.ledger');
+      if (card) card.scrollTop = top;
+    };
+    m.onpointerdown = (e) => {
+      const t = e.target as HTMLElement;
+      if (this.ledger.handle(t, this.g.s)) { audio.play('click'); render(); }
+      else if (t.closest('[data-x]')) this.closeModals();
+      else if (t.closest('[data-codex]')) this.openGuide('economics');
+    };
+    render();
+    const timer = window.setInterval(() => { if (this.openModal !== 'ledger') { clearInterval(timer); return; } render(); }, 1000);
+    this.hideTip();
+    this.show('ledger');
   }
 
   openStats() {
