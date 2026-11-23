@@ -13,7 +13,7 @@ Version 1.0.0 is live on GitHub Pages: a playable 5-era campaign, sandbox, Vites
 | E1 | Colony economy: money, running costs, ledger | none | done |
 | E2 | Tablet and quality profiles: touch controls, graphics profiles, cloud save | none | done |
 | E3 | Market and models: demand, model lifecycle, revenue | E1 | done |
-| E4 | Operations: wear, Service Center, power deals, light hardware tiers | E1 | todo |
+| E4 | Operations: wear, Service Center, power deals, light hardware tiers | E1 | doing (ccr-fff314f0-bhdtti) |
 | E5 | Decision events and politics | E1 (E3 helps) | todo |
 | E6 | Setting pass: sci-fi colony framing, intro, eras, Codex | E3 | todo |
 | E7 | Scenarios and run modifiers | E1–E5 | todo |
@@ -49,7 +49,7 @@ Goal: colony demand that keeps growing and pays for compute; training creates mo
 - **Objectives:** Eras 3–5 rewritten around models and revenue.
 - Hotspots: types, state, save, hud, sim. Size: L.
 
-## E4 Operations
+## E4 Operations (doing, branch `ccr-fff314f0-bhdtti`)
 Goal: running infrastructure takes care, without tedium.
 - **Design:** two maintenance models (wear meter plus random breakdowns vs. only random breakdowns scaled by heat), pick one. Service Center coverage visual: two options.
 - **Sim:** wear and breakdowns; Service Center (Era 2, large radius, repairs and slows wear, upkeep per minute); Robot Hub becomes its upgrade. Power deals: grid import with a connection wait, fixed-price contract, paid curtailment at peak. Light hardware tiers: newer pod tier via research, old ones keep working; depreciation shown in the ledger only.
