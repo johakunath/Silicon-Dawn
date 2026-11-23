@@ -257,7 +257,7 @@ export function buildProps(w: World): PropLayer {
   for (const k of Object.keys(counts)) {
     const kk = +k;
     const im = new THREE.InstancedMesh(kinds[kk].geo, kinds[kk].mat, counts[kk]);
-    im.castShadow = kk === PROP.TREE || kk === PROP.PINE; im.receiveShadow = true;
+    im.castShadow = kk === PROP.TREE || kk === PROP.PINE; im.userData.tree = im.castShadow; im.receiveShadow = true;
     meshes[kk] = im; used[kk] = 0; group.add(im);
   }
   const m = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), s = new THREE.Vector3();
