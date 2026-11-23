@@ -1,3 +1,5 @@
+> Archived: full playtest and feedback log up to 1.0.0. Open questions moved to `docs/PLAYTEST.md`.
+
 # Playtest notes
 
 Method: each milestone has three checks. (1) A real-input run in headless Edge (`scripts/playtest.ts`), which clicks the palette, places buildings by screen position, presses hotkeys and reads the tooltips and inspector. (2) The headless autoplayer, which tests pace, deadlocks and sanity. (3) A screenshot review at 1920×1080 (`scripts/shots.ts`). The Claude browser pane was hidden for most of the session (rAF is throttled to about 2 fps), so "playing by hand" was done with the real-input harness instead.

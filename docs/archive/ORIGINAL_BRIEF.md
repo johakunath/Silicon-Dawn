@@ -1,3 +1,5 @@
+> Archived: the original rebuild brief (2026-11-19). History only; current work lives in `BACKLOG.md`.
+
 # Handover: Rebuild "Silicon Dawn" from scratch
 
 You are building a new version of **Silicon Dawn**, a browser strategy and automation game about building the physical infrastructure behind AI. It runs from sand and solar panels up to a clearly fictional AGI ending. The goal is a game that looks **super impressive** and is **genuinely fun to play**. A tech demo is not the goal.

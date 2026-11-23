@@ -23,7 +23,7 @@ npm run build
 
 The output goes to `dist/`. Serve it from any static host, for example with `npm run preview`.
 
-Every push to `master` runs the tests, builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
+Every push to `main` runs the tests, builds and deploys to GitHub Pages (`.github/workflows/deploy.yml`).
 
 ## Test
 
@@ -83,5 +83,5 @@ A new campaign starts **paused** and opens an interactive tutorial (13 steps, wi
 - `src/audio/`: procedural WebAudio for sound effects and the layered ambient and music bed.
 - `src/game/`: the controller (loop, input, camera, tools, signal → FX and audio wiring).
 - `tests/`: the Vitest suite. `scripts/`: the autoplayer CLI, screenshot and benchmark harness, and real-input playtest.
-- Docs: `ART.md` (art bible), `ARCHITECTURE.md`, `ROADMAP.md`, `PLAYTEST.md`, `HANDOFF.md`.
+- Docs: `CLAUDE.md` (agent guide and doc map), `BACKLOG.md` (what's next), `CHANGELOG.md` (release notes), `docs/` (architecture, art bible, research, playtest).
 - `legacy-v0.2/`: the old Canvas 2D prototype, kept for reference only.
