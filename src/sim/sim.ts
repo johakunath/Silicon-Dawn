@@ -11,8 +11,13 @@ import type { Building, BuildingDef, Contract, ItemId, Link } from './types';
 import { LINKS } from './data/items';
 import { GRANT_SCORE_MUL } from './data/economy';
 import { contractCredits, earnContract, econSecond, econTick, fundEra } from './economy';
+import { marketSecond, marketTrain } from './market';
+import { drPayPerSec, importCap, importPrice, opsSecond, opsTick } from './operations';
+import { SERVICE_REPAIR_MUL, TIER2_COMPUTE, WEAR_AFTER_BREAKDOWN, WEAR_WARN } from './data/operations';
 
 export const ENGINE_TARGET = 160000;
+/** Seconds between special orders (plus up to 120 s): the colony market is the main income, orders are one-off jobs. */
+export const SPECIAL_ORDER_GAP = 220;
 /** the stockpile never ships below this, so construction always has material */
 export const STORAGE_RESERVE = 40;
 export const STORAGE_RESERVE_MAX = 120;
@@ -109,6 +114,7 @@ export function step(s: GameState) {
   if (s.gridDirty) rebuildGrids(s);
   s.time += dt;
   s.tick++;
+  opsTick(s);
   const m = mods(s);
   const tod = timeOfDay(s);
   const sun = sunlight(tod, dayBias(s));
@@ -172,7 +178,7 @@ export function step(s: GameState) {
           out = d.power * Math.min(1.6, wind * local) * s.fx.windMul;
           varGen[b.grid] += out; cleanGen[b.grid] += out; break;
         }
-        case 'core': out = m.firmOff ? 0 : d.power; varGen[b.grid] += out; coreGen[b.grid] += out; break;
+        case 'core': out = m.firmOff || s.ops.drNow ? 0 : importCap(s); varGen[b.grid] += out; coreGen[b.grid] += out; break;
         case 'firm':
           if (b.type === 'gas') { if (!m.firmOff) { firmCap[b.grid] += d.power; gasCap[b.grid] += d.power; } }
           else { // fusion needs water
@@ -213,20 +219,21 @@ export function step(s: GameState) {
       let canDis = 0;
       for (const id of g.nodes) {
         const b = s.byId.get(id)!; const d = BUILDING[b.type];
-        if (d.battery) canDis += Math.min(b.charge / dt, d.battery.rate * s.fx.batteryMul);
+        if (d.battery && b.broken <= 0) canDis += Math.min(b.charge / dt, d.battery.rate * s.fx.batteryMul);
       }
       discharge = Math.min(rem, canDis);
       supplied = V + firmUsed + discharge;
     }
     g.sat = D > 0 ? Math.min(1, supplied / D) : 1;
     let batRate = 0;
-    for (const id of g.nodes) { const nb = s.byId.get(id)!; const nd = BUILDING[nb.type]; if (nd.battery && nb.charge > 1) batRate += nd.battery.rate * s.fx.batteryMul; }
+    for (const id of g.nodes) { const nb = s.byId.get(id)!; const nd = BUILDING[nb.type]; if (nd.battery && nb.broken <= 0 && nb.charge > 1) batRate += nd.battery.rate * s.fx.batteryMul; }
     g.avail = V + firmCap[g.id] + batRate;
     // apply battery flows proportionally
     if (charge > 0 || discharge > 0) {
       for (const id of g.nodes) {
         const b = s.byId.get(id)!; const d = BUILDING[b.type];
-        if (!d.battery) continue;
+        // a broken battery neither charges nor discharges until it is repaired
+        if (!d.battery || b.broken > 0) continue;
         const cap = d.battery.capacity * s.fx.batteryMul, rate = d.battery.rate * s.fx.batteryMul;
         if (charge > 0) {
           const c = Math.min(rate, charge, (cap - b.charge) / dt);
@@ -256,15 +263,16 @@ export function step(s: GameState) {
   for (const b of B) if (BUILDING[b.type].gen === 'firm' && b.grid >= 0) { const g = G[b.grid]; const share = firmCap[b.grid] > 0 ? Math.min(1, (g.gen - Math.min(varGen[b.grid], g.demand)) / firmCap[b.grid]) : 0; if (b.type === 'gas') b.activity = m.firmOff ? 0 : share; else b.activity = share; b.pw = -BUILDING[b.type].power * b.activity; }
 
   // ── pass B: production ──
-  let computeProduced = 0, itPower = 0, facPower = 0, trainEff = 0, served = 0;
+  let computeProduced = 0, itPower = 0, facPower = 0, trainEff = 0, trainFiber = 0, served = 0;
   const water0 = s.stats.produced.water ?? 0;
   const shortage = m.chips;
   for (let i = 0; i < B.length; i++) {
     const b = B[i], d = BUILDING[b.type];
     if (b.broken > 0) {
-      b.broken = Math.max(0, b.broken - dt * s.fx.autoRepair);
+      b.broken = Math.max(0, b.broken - dt * s.fx.autoRepair * (b.serviced ? SERVICE_REPAIR_MUL : 1));
       b.activity = 0; b.status = 'broken';
-      if (b.broken === 0) signal(s, 'repair', b.x, b.y);
+      // a field fix gets it running again, but only half restored
+      if (b.broken === 0) { b.wear = Math.min(b.wear, WEAR_AFTER_BREAKDOWN); signal(s, 'repair', b.x, b.y); }
       continue;
     }
     const sat = d.power < 0 ? (b.grid >= 0 ? G[b.grid].sat : 0) : 1;
@@ -333,6 +341,7 @@ export function step(s: GameState) {
         case 'training': {
           const t = (b.rxT * sat) * (0.5 + 0.5 * fiberFrac);
           trainEff += t;
+          trainFiber += t * fiberFrac;
           break;
         }
         case 'engine': {
@@ -385,7 +394,7 @@ export function step(s: GameState) {
       const tol = s.fx.heatTolerance;
       const throttle = b.heat > 1 + tol ? Math.max(0.45, 1 - (b.heat - 1 - tol) * 1.0) : 1;
       const modeMul = b.mode === 'training' ? 1.25 : 1;
-      const c = d.outputs!.compute! * k * throttle * s.fx.computeMul * modeMul;
+      const c = d.outputs!.compute! * k * throttle * s.fx.computeMul * modeMul * (b.tier === 2 ? TIER2_COMPUTE : 1);
       b.outBuf.compute = c;
       b.outQ = b.mode === 'training' ? 0.6 : b.mode === 'inference' ? 1.3 : 1;
       b.outT = b.mode === 'training' ? 1.3 : b.mode === 'inference' ? 0.8 : 1;
@@ -530,6 +539,9 @@ export function step(s: GameState) {
       l.state = mv >= cap * 0.97 ? 'saturated' : 'ok';
     }
   }
+  // a machine near the end of its life says so (outside service coverage)
+  for (const b of B) if (b.status === 'ok' && b.wear >= WEAR_WARN && !b.serviced) b.status = 'worn';
+
   const a = dt / 1.5;
   for (const l of s.links) l.rate += (l.moved / dt - l.rate) * a;
 
@@ -557,14 +569,18 @@ export function step(s: GameState) {
     if (st.pueWindow.length > 60) st.pueWindow.shift();
   }
 
-  econTick(s, dt, { imported, exported, gas: gasUsed, water: (s.stats.produced.water ?? 0) - water0 });
+  econTick(s, dt, { imported, exported, gas: gasUsed, water: (s.stats.produced.water ?? 0) - water0, price: importPrice(s), curtailPay: s.ops.drNow ? drPayPerSec(s) : 0 });
 
   // ── trainer contracts get training ──
   for (const c of s.contracts) if (c.state === 'active' && c.kind === 'training') c.progress += trainEff;
+  // ── the current training run gets it too (a special order borrows the same cluster) ──
+  marketTrain(s, trainEff, trainFiber);
 
   if (s.tick % 10 === 0) {
     tickEvents(s, 1);
     tickContracts(s, 1);
+    marketSecond(s);
+    opsSecond(s);
     econSecond(s);
     checkObjectives(s);
   }
@@ -644,8 +660,8 @@ function tickContracts(s: GameState, dt: number) {
     c.reward.credits = contractCredits(c.kind, c.target, c.kind === 'inference' ? 120 : 0);
     s.contracts.push(c);
     signal(s, 'contract_offer');
-    pushFeed(s, `New contract offered: ${c.title}`, 'info');
-    s.nextContractAt = s.time + 110 + s.rng.range(0, 60);
+    pushFeed(s, `New special order: ${c.title}`, 'info');
+    s.nextContractAt = s.time + SPECIAL_ORDER_GAP + s.rng.range(0, 120);
   }
 }
 
@@ -658,10 +674,10 @@ function finishContract(s: GameState, c: Contract, ok: boolean) {
     if (credits > 0) earnContract(s, credits);
     s.stats.contractsDone++;
     s.stats.eraContractsDone++;
-    pushFeed(s, `✓ Contract complete: ${c.title} (+${credits ? credits + ' credits, ' : ''}${c.reward.rp} research)`, 'good');
+    pushFeed(s, `✓ Special order complete: ${c.title} (+${credits ? credits + ' credits, ' : ''}${c.reward.rp} research)`, 'good');
     signal(s, 'contract_done');
   } else {
-    pushFeed(s, `✕ Contract failed: ${c.title}`, 'bad');
+    pushFeed(s, `✕ Special order failed: ${c.title}`, 'bad');
     signal(s, 'contract_fail');
   }
 }

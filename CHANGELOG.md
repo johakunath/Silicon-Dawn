@@ -3,6 +3,22 @@
 Newest first. Each entry says what a player notices. Technical detail lives in the commit history.
 
 ## Unreleased
+- Telemetry (opt-in): before your first game the game asks whether to share anonymous run summaries (era times, money, stalls, breakdowns) with a random player id. Change it any time in the Menu; the last 5 run logs stay on your device and export as JSON.
+- Friends score sheet: the final screen shows your campaign score and lets you submit it under a name you type; Menu → Score sheet shows the top 20 per difficulty. Needs the updated cloud script (version 2).
+- Batteries show their charge as a glowing level on the cells (green, amber, red; pulsing while charging) instead of a floating gauge.
+- Ledger: the per-building table is compact, grouped by role with subtotals, sortable, with bars, use dots, a coloured net column, a 3-minute trend line and payback pills. Gateways now show their share of market revenue.
+- Fix: a broken battery no longer keeps charging and discharging.
+- Operations: machines wear as they work (hot racks faster) and break down more and more often near the end of their life. Select one to see its wear and breakdown risk; `R` overhauls it for 10 metal.
+- New Service Center (Era II): maintains everything within 11 tiles so covered machines stay fresh, for an upkeep every minute. Robot Hubs now service their radius too. New Service overlay (`U`) shows coverage and worn machines outside it.
+- Power deals in the ledger: a bigger grid connection for the Core (arrives after a 3-minute wait), a fixed-price power contract, and paid peak curtailment at dusk.
+- New tech Next-Gen Accelerators: pods built afterwards make 35% more compute for the same power; older pods keep working. The ledger shows hardware book value and depreciation.
+- New Codex chapter "Operations". Saves move to version 5.
+- Colony market (Era III on): five customer segments (chat, media, code, enterprise, science) with their own price, model quality, latency and uptime needs, and demand that keeps growing. Inference Gateways sell answers with your deployed model; spare capacity keeps latency low, uptime builds reputation, and the panel shows lost revenue and why.
+- Models: the Training Core always trains your next model (Lite, Standard or Max). Models age as rival labs push the frontier, bigger models answer better but cost more compute per answer, and auto-deploy keeps the best earner live. Every colony starts with an open baseline model.
+- Market & Models panel (`B`, or the Market card on the right): revenue, lost demand, reputation, gateway load and latency, the frontier, a revenue chart, the training run, the model shelf with deploy and retire.
+- Contracts are now rarer special orders. Era III to V objectives are about shipping models and market revenue. New Codex chapter "Market & models".
+- Balance: the campaign runs about 80 to 110 minutes on the test seeds (was 105 to 140); Era IV is much shorter, par moves from Era IV to Era V; the Era III funding round is ¢4,500.
+- Saves move to version 4; older saves open the market on their first second in Era III or later.
 - Colony economy: buildings cost credits as well as materials, and every minute costs upkeep, power bought through the Core (cheap at noon, expensive at dusk), gas fuel and water. Credits come from exports of surplus metal, silicon and chips, contracts, power sold, a funding round at each new era and a small Core stipend. Deep debt triggers an emergency grant that lowers the era score, so you can never get stuck broke.
 - Ledger (`K`, or click the credits chip): income and costs per minute, balance trend, power price over the day, cost per 1,000 compute, utilisation, payback for every building type, and SELL/HOLD switches for exports.
 - Build tooltips show capex, running cost and payback (or cost per compute). New Codex chapter "Unit economics".

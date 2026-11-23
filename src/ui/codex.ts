@@ -8,6 +8,10 @@ import { defTip, nightSeconds } from './tips';
 import { FEED_IN, FUNDING, INTEREST_PER_MIN, POWER_PRICE, PRICE } from '../sim/data/economy';
 import { capexOf, keepLevel, overdraftFloor, unitEcon } from '../sim/economy';
 import { cr } from './ledger';
+import { BASE_LATENCY, FRONTIER_GROWTH, MODEL_SIZES, SEGMENTS, SIZE_ORDER } from '../sim/data/market';
+import { maxLoad } from '../sim/market';
+import { BREAK_AT_FULL, BREAK_TIME, DEPRECIATION_MIN, DR_PEAK, FIXED_MUL, FIXED_TIME, GRID_STEP, GRID_WAIT, RESIDUAL, SERVICE_RESTORE, TIER2_COMPUTE } from '../sim/data/operations';
+import { gridUpgradeCost, importCap, wearRate } from '../sim/operations';
 
 export interface Chapter { id: string; icon: string; title: string; html: (s: GameState) => string }
 
@@ -26,7 +30,7 @@ export const CHAPTERS: Chapter[] = [
       '<kbd>Q</kbd>/<kbd>E</kbd> rotate in 90° steps. Hold <b>left + right</b> mouse buttons (or Alt + RMB) and drag to rotate freely.',
       '<kbd>1</kbd>–<kbd>0</kbd> use the <b>hotbar</b>. Hover a build item and press a number to put it there.',
       '<kbd>L</kbd> link · <kbd>X</kbd> demolish · <kbd>V</kbd> move · <kbd>G</kbd> pipette (build more of what you point at).',
-      '<kbd>P H N O</kbd> overlays · <kbd>I</kbd> statistics · <kbd>K</kbd> ledger · <kbd>T</kbd> tech · <kbd>J</kbd> codex · <kbd>Z</kbd> jump to the next problem.',
+      '<kbd>P H N O U</kbd> overlays · <kbd>I</kbd> statistics · <kbd>K</kbd> ledger · <kbd>B</kbd> market · <kbd>T</kbd> tech · <kbd>J</kbd> codex · <kbd>Z</kbd> jump to the next problem.',
     ])}`,
   },
   {
@@ -85,7 +89,8 @@ export const CHAPTERS: Chapter[] = [
         '<kbd>K</kbd> opens the <b>ledger</b>: income and costs per minute, and payback for every building type.',
       ])}<h2>Where credits come from</h2>${ul([
         `<b>Exports</b>: the stockpile sells metal, silicon and chips above a keep level (now ${keepLevel(s, 'metal')} metal), enough to build anything this era. Prices: metal ${cr(PRICE.metal!)}, chips ${cr(PRICE.chips!)}, accelerators ${cr(PRICE.accel!)}. Switch each item between SELL and HOLD in the ledger.`,
-        '<b>Contracts</b> pay credits for training runs and for inference served.',
+        '<b>The colony market</b> pays for every answer your Gateways serve (<kbd>B</kbd>). It is the main income from Era III on.',
+        '<b>Special orders</b> pay a one-off sum for a training job or a burst of inference.',
         `<b>Funding rounds</b>: investors pay when an era starts (${cr(FUNDING[3])} for the Datacenter era). The next build-out is financed up front; revenue has to justify it later.`,
         `<b>Power sold</b>: surplus the batteries cannot take goes to the colony grid at ${Math.round(FEED_IN * 100)}% of the current price.`,
       ])}<h2>Payback and utilisation</h2>${ul([
@@ -109,6 +114,52 @@ export const CHAPTERS: Chapter[] = [
     },
   },
   {
+    id: 'market', icon: '◆', title: 'Market & models',
+    html: (s) => `<h2>The colony market</h2>${ul([
+      'From Era III, the colonies buy AI answers. <b>Inference Gateways</b> sell them with your <b>deployed model</b>. Press <kbd>B</kbd> for the Market panel.',
+      'Demand comes in five <b>segments</b>, and it grows every minute:',
+    ])}<table class="stab"><tr><th>Segment</th><th>Price/query</th><th>Min. quality</th><th>Latency</th><th>Uptime</th></tr>${SEGMENTS.map((d) => `<tr><td>${d.name}</td><td>${cr(d.price)}</td><td>${Math.round(d.minQuality * 100)}%</td><td>${Number.isFinite(d.maxLatency) ? `≤ ${d.maxLatency} ms (load ≤ ${Math.round(maxLoad(d) * 100)}%)` : 'batch, waits'}</td><td>${Math.round(d.uptime * 100)}%</td></tr>`).join('')}</table>${ul([
+      `<b>Latency</b> = ${BASE_LATENCY} ms ÷ (1 − load). A gateway at 50% load answers in ${BASE_LATENCY * 2} ms, at 90% in ${BASE_LATENCY * 10} ms. Serving chat or media caps how full the gateways may run, so <b>spare capacity</b> earns money.`,
+      '<b>Reputation</b> follows gateway uptime (power, breakdowns, compute supply). Below a segment’s uptime need, its customers leave.',
+      'The panel shows <b>lost revenue</b> and why: model too weak, reputation, latency (no headroom) or capacity (not enough compute).',
+    ])}<h2>Models</h2>${ul([
+      'A <b>Training Core</b> always runs the next model. Pick its size in the Market panel:',
+    ])}<table class="stab"><tr><th>Size</th><th>Training</th><th>Quality at release</th><th>Compute per query</th></tr>${SIZE_ORDER.map((k) => { const z = MODEL_SIZES[k]; return `<tr><td>${z.name}</td><td>${z.train.toLocaleString('en-US')}× era scale</td><td>${Math.round(z.quality * 90)}–${Math.round(z.quality * 110)}%</td><td>${z.cost}</td></tr>`; }).join('')}</table>${ul([
+      'Quality is a share of the <b>frontier</b>, the best rival model. Up to 20% more if the training arrived <b>over fiber</b>.',
+      `The frontier grows about ${Math.round(FRONTIER_GROWTH[s.difficulty] * 1000) / 10}% per minute, so every model loses value. When it drops below a segment’s minimum, that segment stops buying.`,
+      '<b>Bigger is not always better</b>: a Max model wins science, but needs 2.5× the compute per answer, so chat pays almost nothing on it. A Lite model serves cheap volume.',
+      '<b>Auto-deploy</b> (on by default) keeps whichever shelf model earns most right now. Switch it off to choose yourself.',
+    ])}<h2>In the real world</h2>${ul([
+      'Price per answer for a given quality has fallen many times over within a few years, as better and cheaper models ship.',
+      'Serving cost grows with model size, which is why labs offer small, medium and large versions of the same model.',
+      'Inference providers keep servers below full load for latency-sensitive traffic and backfill with batch jobs.',
+    ])}`,
+  },
+  {
+    id: 'operations', icon: '🔧', title: 'Operations',
+    html: (s) => `<h2>Wear and breakdowns</h2>${ul([
+      `Machines <b>wear</b> as they work: a smelter at full load wears about ${Math.round(wearRate('smelter') * 100)}% per minute, a rack ${Math.round(wearRate('rack') * 100)}%. Hot racks wear twice as fast. Poles, substations and the Core never wear.`,
+      `Breakdowns are rare while a machine is fresh and climb steeply with wear: at 100% about one every ${Math.round(1 / BREAK_AT_FULL)} s. A breakdown stops it for ${BREAK_TIME} s and leaves it half worn.`,
+      'Select a machine to see its wear and risk. <kbd>R</kbd> repairs a broken one or <b>overhauls</b> a worn one for 10 metal.',
+    ])}<h2>Service Centers</h2>${ul([
+      `A <b>Service Center</b> (Era II) maintains everything within ${BUILDING.service.service} tiles: wear grows 4× slower and crews work off ${Math.round(SERVICE_RESTORE * 100)}% per minute, so covered machines rarely break. It costs ${cr(capexOf(s, 'service'))} and upkeep every minute.`,
+      '<kbd>U</kbd> shows coverage: teal is maintained, amber and red are worn machines outside it.',
+      '<b>Robot Hubs</b> (Era IV) are the upgrade: they maintain their radius too, make it 30% faster and fix breakdowns at once.',
+    ])}<h2>Power deals</h2>${ul([
+      `<b>Grid connection</b>: the Core imports up to ${importCap(s)} power from the colony grid. Each upgrade adds ${GRID_STEP} for ${cr(gridUpgradeCost(s))} (rising) and takes the utility ${Math.round(GRID_WAIT / 60)} minutes. Real data centres wait years in interconnection queues.`,
+      `<b>Fixed-price contract</b>: ${Math.round(FIXED_TIME / 60)} minutes of imports at ${Math.round(FIXED_MUL * 100)}% of the average price, whatever the hour. You give up cheap noon power to be safe from the dusk peak.`,
+      `<b>Peak curtailment</b>: while the price is ${DR_PEAK}× average or more, the Core imports nothing and the grid pays you for the capacity you free up. It pays well if batteries can carry you through dusk.`,
+      'All three live in the ledger (<kbd>K</kbd>).',
+    ])}<h2>Hardware generations</h2>${ul([
+      `<b>Next-Gen Accelerators</b> (tech): pods built afterwards make ${Math.round((TIER2_COMPUTE - 1) * 100)}% more compute for the same power. Old pods keep working; replacing them is your call, never forced.`,
+      `The ledger shows <b>book value</b>: capex written down in a straight line over ${DEPRECIATION_MIN} minutes to ${Math.round(RESIDUAL * 100)}%. It is not cash, but it shows how fast hardware loses value.`,
+    ])}<h2>In the real world</h2>${ul([
+      'Failure rates of hardware follow a "bathtub": a few early failures, a long quiet middle, then wear-out. Preventive maintenance and spares keep fleets in the quiet middle.',
+      'Large sites sign long power contracts and are paid by grid operators to cut load at peaks (demand response).',
+      'Accelerators are usually written off over 4 to 6 years, while each new generation does noticeably more work per watt.',
+    ])}`,
+  },
+  {
     id: 'compute', icon: '◈', title: 'Compute & cooling',
     html: () => `${ul([
       'Racks, Datacenter Halls and Accelerator Pods turn <b>power into compute and heat</b>.',
@@ -121,20 +172,19 @@ export const CHAPTERS: Chapter[] = [
   {
     id: 'purpose', icon: '◎', title: 'Who uses all this AI?',
     html: () => `${ul([
-      '<b>Contracts</b> are your customers: hospitals, transit, search, translators, climate scientists.',
-      '<b>Inference contracts</b> are society using AI. They need steady compute at <b>Gateways</b> with high uptime.',
-      '<b>Training contracts</b> build models for clients by a deadline.',
-      'Completing contracts pays <b>research and materials</b> back into your economy.',
+      'The <b>colony market</b> is your customer base: colonists chatting, channels making media, engineers writing code, firms running their business, scientists running batch jobs.',
+      'Each wants something different: price, model quality, fast answers or uptime. See <b>Market &amp; models</b>.',
+      '<b>Special orders</b> are one-off jobs from hospitals, transit and research teams. They pay credits, research and materials.',
       'The Dawn Engine ending is a <b>fictional</b> capstone. The real game is the infrastructure: energy, heat, water, materials, networks and reliability.',
     ])}`,
   },
   {
-    id: 'events', icon: '⚠', title: 'Events & contracts',
+    id: 'events', icon: '⚠', title: 'Events & special orders',
     html: () => `${ul([
       'From Era II on, <b>events</b> hit with a 20 s warning: dust storms (solar), heatwaves (cooling), grid faults (gas trips, breakdowns), water restrictions, chip shortages.',
       'Redundancy wins: spare batteries, mixed cooling, more than one power source.',
-      '<b>Robot Hubs</b> repair broken buildings nearby instantly. You can also select a broken building and press <kbd>R</kbd> (10 metal).',
-      'Accept contracts in the panel on the right. Only one training and one inference contract can run at a time.',
+      '<b>Service Centers</b> keep machines from wearing out, and <b>Robot Hubs</b> also repair broken buildings nearby instantly. You can also select a broken building and press <kbd>R</kbd> (10 metal).',
+      'Accept special orders in the Market card on the right. Only one training and one inference order can run at a time.',
     ])}`,
   },
   {
@@ -144,6 +194,7 @@ export const CHAPTERS: Chapter[] = [
       '<kbd>H</kbd> <b>Heat</b>: IT buildings tinted from blue (cool) to red (throttling).',
       '<kbd>N</kbd> <b>Network</b>: only compute links, with saturation states.',
       '<kbd>O</kbd> <b>Flow</b>: belts and pipes coloured by state (amber = full capacity, red = blocked).',
+      '<kbd>U</kbd> <b>Service</b>: Service Center and Robot Hub coverage, and worn machines outside it.',
       '<kbd>I</kbd> <b>Statistics</b>: production and consumption per minute of every item, and power by source and consumer. The Core’s panel opens it too.',
     ])}`,
   },

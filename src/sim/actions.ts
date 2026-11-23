@@ -99,6 +99,8 @@ export function place(s: GameState, type: string, x: number, y: number, opts: { 
   if (!c.ok && !(opts.free && c.reason?.startsWith('Need'))) return null;
   if (!opts.free) { pay(s, c.cost); payCapex(s, c.credits ?? 0); }
   const b = newBuilding(s.nextId++, type, x, y, s.time);
+  // hardware generations: pods built after Next-Gen Accelerators are the newer, faster tier
+  if (type === 'pod' && s.fx.podTier > 0) b.tier = 2;
   b.richness = c.richness ?? 1;
   addBuildingRaw(s, b);
   signal(s, 'build', x, y, type);
@@ -363,13 +365,18 @@ export function cycleMode(s: GameState, id: number) {
   signal(s, 'mode', b.x, b.y, b.mode);
 }
 
+/** Wear from which a manual overhaul (R) is offered on a running building. */
+export const OVERHAUL_FROM = 0.3;
+
+/** Repair a broken building, or overhaul a worn one: 10 metal, back to running and no wear. */
 export function repair(s: GameState, id: number): boolean {
   const b = s.byId.get(id);
-  if (!b || b.broken <= 0) return false;
+  if (!b || (b.broken <= 0 && b.wear < OVERHAUL_FROM)) return false;
   const cost = { metal: 10 };
   if (!canAfford(s, cost)) return false;
   pay(s, cost);
   b.broken = 0;
+  b.wear = 0;
   signal(s, 'repair', b.x, b.y);
   return true;
 }

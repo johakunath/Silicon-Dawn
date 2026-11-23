@@ -6,6 +6,8 @@ export interface Model {
   body: THREE.BufferGeometry;
   glow: THREE.BufferGeometry | null;
   spin?: { geo: THREE.BufferGeometry; pivot: THREE.Vector3; axis: 'x' | 'y' | 'z'; speed: number };
+  /** a glowing level gauge built on the model (base at y = 0), drawn at baseY and scaled in height by a 0..1 level (battery charge) */
+  fill?: { geo: THREE.BufferGeometry; baseY: number };
   height: number;
   emitters: { x: number; y: number; z: number; kind: 'steam' | 'smoke' | 'spark' | 'heat' }[];
 }
@@ -203,13 +205,16 @@ const builders: Record<string, Builder> = {
   battery() {
     const b = new GB(), g = new GB();
     foundation(b, 2);
+    const f = new GB();
     for (const x of [-0.55, 0, 0.55]) {
       b.cyl(0.22, 0.22, 1.0, x, 0.12, 0, C.white, 10);
       b.cyl(0.12, 0.12, 0.1, x, 1.12, 0, C.steelD, 8);
-      g.box(0.08, 0.55, 0.02, x, 0.35, 0.22, G.green);
+      // level window on the front of each cell: dark when empty, the glowing fill rises with the charge
+      b.box(0.17, 0.82, 0.03, x, 0.21, 0.215, C.darker);
+      f.box(0.13, 0.78, 0.02, x, 0, 0.235, G.white);
     }
     b.box(1.7, 0.1, 0.9, 0, 0.12, 0, C.steelD);
-    return { body: b.build()!, glow: g.build(), height: 1.6, emitters: [] };
+    return { body: b.build()!, glow: g.build(), fill: { geo: f.build()!, baseY: 0.23 }, height: 1.6, emitters: [] };
   },
   depot() {
     const b = new GB(), g = new GB();
@@ -309,13 +314,16 @@ const builders: Record<string, Builder> = {
   gridbat() {
     const b = new GB(), g = new GB();
     foundation(b, 2);
+    const f = new GB();
     for (const z of [-0.45, 0.45]) {
       b.box(1.75, 0.7, 0.7, 0, 0.12, z, C.white);
       for (let i = -3; i <= 3; i++) b.box(0.03, 0.7, 0.72, i * 0.25, 0.12, z, C.concreteD);
-      g.box(1.4, 0.06, 0.02, 0, 0.6, z + 0.36, G.green);
+      // level window along each container: the glowing band rises with the charge
+      b.box(1.44, 0.52, 0.03, 0, 0.2, z + 0.365, C.darker);
+      f.box(1.38, 0.48, 0.02, 0, 0, z + 0.385, G.white);
     }
     b.box(0.3, 0.3, 0.3, 0.7, 0.82, 0.45, C.steel);
-    return { body: b.build()!, glow: g.build(), height: 1.4, emitters: [] };
+    return { body: b.build()!, glow: g.build(), fill: { geo: f.build()!, baseY: 0.22 }, height: 1.4, emitters: [] };
   },
   gas() {
     const b = new GB(), g = new GB();
@@ -449,6 +457,23 @@ const builders: Record<string, Builder> = {
     b.box(0.5, 0.08, 0.08, 0.25, 0.95, 0.65, C.yellow, 0, 0, 0.4);
     g.box(1.2, 0.3, 0.04, 0, 0.35, 0.36, G.yellow);
     return { body: b.build()!, glow: g.build(), height: 1.6, emitters: [{ x: 0.1, y: 1.0, z: 0.65, kind: 'spark' }] };
+  },
+  service() {
+    // maintenance depot: workshop with roll-up doors, a crane arm and a teal beacon that turns
+    const b = new GB(), g = new GB();
+    foundation(b, 2);
+    b.box(1.6, 0.85, 1.1, 0, 0.12, -0.3, C.concrete);
+    b.box(1.7, 0.08, 1.2, 0, 0.97, -0.3, C.steelD);
+    for (const x of [-0.42, 0.42]) { b.box(0.62, 0.6, 0.04, x, 0.12, 0.26, C.steelD); g.box(0.5, 0.03, 0.01, x, 0.66, 0.285, G.cyan); }
+    b.box(0.5, 0.12, 0.5, -0.5, 0.12, 0.62, C.yellow);
+    b.box(0.08, 0.9, 0.08, 0.62, 0.12, 0.62, C.yellow);
+    b.box(0.08, 0.08, 0.7, 0.62, 1.0, 0.35, C.yellow);
+    b.cyl(0.05, 0.05, 0.55, -0.55, 1.05, -0.55, C.steel, 5);
+    g.box(1.2, 0.05, 0.02, 0, 0.9, 0.205, G.cyan);
+    const s = new GB();
+    s.box(0.22, 0.1, 0.1, 0, 0, 0, C.dark);
+    s.box(0.08, 0.06, 0.06, 0.12, 0.02, 0, '#2fd6c0');
+    return { body: b.build()!, glow: g.build(), spin: { geo: s.build()!, pivot: new THREE.Vector3(-0.55, 1.66, -0.55), axis: 'y', speed: 2.6 }, height: 1.8, emitters: [] };
   },
   hub() {
     const b = new GB(), g = new GB();

@@ -367,15 +367,17 @@ export class Game {
       case 'h': this.setOverlay('heat'); break;
       case 'n': this.setOverlay('network'); break;
       case 'o': this.setOverlay('logistics'); break;
+      case 'u': this.setOverlay('service'); break;
       case 't': this.hud.openTech(); break;
       case 'i': this.hud.openStats(); break;
       case 'k': this.hud.openLedger(); break;
+      case 'b': this.hud.openMarket(); break;
       case 'j': case 'f1': this.hud.openGuide(); e.preventDefault(); break;
       case 'c': case 'home': this.focusCore(); break;
       case 'f': if (this.view.selected) { const b = this.view.selected; const d = BUILDING[b.type]; this.focus(b.x + d.size / 2, b.y + d.size / 2); } break;
       case 'z': this.nextProblem(); break;
       case 'm': if (this.view.selected?.type === 'pod') { cycleMode(this.s, this.view.selected.id); this.hud.refreshInspector(true); } break;
-      case 'r': if (this.view.selected && this.view.selected.broken > 0) repair(this.s, this.view.selected.id); break;
+      case 'r': if (this.view.selected) repair(this.s, this.view.selected.id); break;
       case 'f3': this.settings.showFps = !this.settings.showFps; this.applySettings(); e.preventDefault(); break;
       default:
         if (/^[0-9]$/.test(k)) {
@@ -710,6 +712,8 @@ export class Game {
         case 'contract_done': audio.play('contract'); break;
         case 'contract_fail': audio.play('fail'); break;
         case 'funding': audio.play('contract'); break;
+        case 'model_shipped': audio.play('contract'); break;
+        case 'market_open': audio.play('open'); break;
         case 'grant': audio.play('fail'); break;
         case 'break': audio.play('break'); break;
         case 'repair': audio.play('repair'); break;

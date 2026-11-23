@@ -43,11 +43,31 @@ Build infrastructure (capex) → run it (opex: power, water, upkeep, service) �
 - Reputation follows uptime. Unserved demand is visible (a lost-revenue number).
 - Replaces most of today's contracts; contracts may stay as special orders.
 
+**Built in E3 (model A, see decision log).** Numbers live in `src/sim/data/market.ts`, rules in `src/sim/market.ts`.
+- The market opens with Era III (at once in the sandbox). Demand in queries/s per segment = base × era (1, 2.5, 4) × (1 + growth × minutes open); shared growth 2.5%/min, code and enterprise +0.5, science +1.5.
+- Segments: chat (¢0.06/query, quality ≥ 40%, ≤ 120 ms, uptime 70%), media (¢0.09, 55%, ≤ 100 ms, 75%), code (¢0.16, 75%, ≤ 200 ms, 85%), enterprise (¢0.24, 65%, ≤ 300 ms, 95%), science (¢0.45, 105%, batch, 60%). Price per query × clamp(model quality, 0.5, 1.5).
+- Serving: capacity = gateway compute ÷ model compute per query. Latency = 30 ms ÷ (1 − load), so each latency limit is a load cap (chat 75%, media 70%, code 85%, enterprise 90%). Every second the scheduler tries every mix of eligible segments and keeps the one that earns most. Unserved demand is "lost" with a reason: weak model, reputation, latency or capacity.
+- Reputation follows gateway uptime (time constant 150 s; a brownout counts by its depth, a breakdown or no compute is down). Below a segment's uptime need its demand fades over 15 points to a loyal floor of 30%.
+- Models: the Training Core always runs the next model. Sizes Lite / Standard / Max: 2,000 / 5,000 / 15,000 training (× 5 in Era IV, × 10 in Era V), quality 75% / 100% / 125% of the frontier at release, × (0.9 + 0.2 × fiber share), compute per query 0.5 / 1 / 2.5. The frontier grows 1.5%/min (relaxed 1.0, race 2.0). Every colony starts with an open baseline model (70%, 0.5 per query). Auto-deploy (on by default) keeps the shelf model that earns most; the shelf holds 4.
+- Contracts became special orders: same rules and pay, one every 220–340 s instead of 110–170 s.
+- Objectives: Era III ships Dawn-1 and earns ¢150/min; Era IV ships a model at 100% of the frontier (replaces "2 contracts"); Era V earns ¢1,200/min.
+
+**Balance after E3** (autoplayer, standard, 5 seeds): campaign 78–112 sim-minutes (was 105–138); Era III 21–37, Era IV 10–24 (was 19–72), Era V 26–48 min, no emergency grants. Par moved from Era IV to Era V (40/20 → 30/30); Era III funding ¢3,500 → ¢4,500 because special orders no longer carry the Era III budget. Market revenue reaches about ¢150–300/min in Era III and ¢1,000–2,000/min late; lost demand stays 3–5× revenue, so more gateways always pay. Autoplayer fixes found on the way: generators are now wired to the grid (gas turbines were often unconnected), and Accelerator Fabs get a chips link.
+
 ### 3. Operations: maintenance, service and power deals
 - Buildings **wear** with use and can break down at random (more likely when hot or worn).
 - **Service Center** (Anno fire-station style): covers all buildings in a large radius, repairs them fast and slows wear, costs upkeep per minute. Unlocked early (Era 2). The existing Robot Hub becomes its late-game upgrade.
 - Hardware tiers stay light: newer accelerator tiers unlock by research and are better per watt, old ones keep working (no forced replacement). Depreciation shows in the ledger only.
 - Power deals: time-of-day price, grid import with a connection wait, fixed-price power contracts, getting paid to cut load at peak.
+
+**Built in E4 (model A, see decision log).** Numbers live in `src/sim/data/operations.ts`, rules in `src/sim/operations.ts`.
+- Wear per minute at full load: extractors and refiners 5%, compute 6% (12% while throttling hot), cooling 5%, workloads 3%, gas 6%, wind and fusion 4%, solar 1.5%, batteries 2%; idle machines age at 20% of that. Poles, substations, depots, the Core and the Dawn Engine never wear.
+- Breakdown chance per second = wear³ ÷ 90 (× event severity by difficulty): about one per 90 s when worn out, almost none below 40%. A breakdown lasts 30 s and leaves the machine at 50% wear. `R` repairs or overhauls (wear 0) for 10 metal from 30% wear.
+- Service Center (Era II, ¢250, ¢6/min, 3 power, radius 11): inside coverage wear grows at 25% and crews work off 12%/min, so covered machines stay near 0%; breakdowns are fixed 3× faster. A Robot Hub with robots services its radius 8 too (the late upgrade). `U` overlay shows coverage and worn machines outside it.
+- Grid connection: the Core imports 6 power, +20 per upgrade (¢500 × n, 3-minute wait, Era II+, max 10). Fixed-price contract (Era II+): 10 minutes of imports at 110% of the average price. Peak curtailment (Era III+): while the price is ≥ 1.4× average the Core imports nothing and the grid pays 2.5× the average price per power of connection.
+- Next-Gen Accelerators (tech, Era IV, 240 research): pods built afterwards make 35% more compute for the same power; older pods keep working. Ledger shows hardware book value (straight line over 60 minutes to 20%) and depreciation per minute; no cash moves.
+
+**Balance after E4** (autoplayer, standard, 5 seeds): campaign 81–99 sim-minutes; Era III 23–31, Era IV 11–29, Era V 22–35 min; no grants. Without Service Centers the autoplayer saw about 730 breakdowns over a 90-minute run (8 per minute late); with them (2 early, about 8 by Era V) only 7. Breakdown news is batched into one feed line every 30 s.
 
 ### 4. Decision events and politics
 Events become **choices** with trade-offs, announced ahead so preparation matters. Examples:
@@ -66,6 +86,12 @@ Severity scales with difficulty.
 - Friends see a score sheet per scenario. Telemetry is **opt-in** on first start, because friends will play too.
 - Must be live before the owner's first full play.
 
+**Built in E8.** Client in `src/ui/telemetry.ts`, score rule in `src/sim/score.ts`, backend ops in `tools/apps-script/Code.gs` (version 2).
+- Opt-in card before the first game (Share anonymously / No thanks, keep it local); Menu row to change it; nothing leaves the device without "yes" and a script URL.
+- Data shape: one row per run in the `telemetry` tab, replaced on every upload (every 2 minutes of play with changes, on an era change, at the finish, and when the tab is hidden), with headline columns plus a JSON summary (era times and grades, money lines, a sample per minute, up to 300 events).
+- Local run log: the last 5 runs in local storage, exported as JSON from the Menu.
+- Score = average era rating × 10,000 − 20 per minute over the campaign par (138 min). Submitted from the finale with a typed name (16 characters); the score sheet shows the top 20 per difficulty, best first, ties by time.
+
 ## Decision log
 | Date | Decision | Why |
 |---|---|---|
@@ -82,4 +108,15 @@ Severity scales with difficulty.
 | 2026-11-23 | E1 economy model A "credits on top of materials" over B "credits replace materials" | A keeps the logistics game (pillars 1, 2) and adds money as a second constraint, which mirrors real capex (bill of materials plus installation). B would make belts pointless for construction. Risk of two currencies is handled by automatic exports above a keep level. |
 | 2026-11-23 | Funding round at each era start | Without it the autoplayer needed 2–3× longer per era. It also teaches the real pattern: AI build-outs are financed before they earn. |
 | 2026-11-23 | Power is bought and sold only through the Command Core (grid tie) | Own generators have no marginal cost, so a time-of-day price only means something at the tie. Grid import deals and curtailment payments stay in E4. |
+| 2026-11-23 | E8 opt-in as one card before the first game (A) over a banner during play (B) | A is a clear, equal choice made once; B is easy to miss and competes with the tutorial. "No" is a full answer, not a nag |
+| 2026-11-23 | E8 data shape: one row per run, updated in place, with a JSON summary (A) over one row per event (B) | A keeps the Sheet small and readable for the owner (a few rows per friend), fits Apps Script limits, and still carries the events inside the summary. B would grow by thousands of rows per run |
+| 2026-11-23 | Battery charge as a glowing level on the cells instead of a floating 2D gauge | The owner asked for the level on the building itself; it reads at any zoom and keeps the view clean |
+| 2026-11-23 | Ledger per-building table option A "compact live table with in-cell charts" over B "treemap tiles" | A keeps every number visible and sortable (Excel-like) and adds bars, use dots, a net band, a 3-minute trend line and payback pills; B is playful but hides numbers behind hover |
+| 2026-11-23 | E4 maintenance model A "wear meter plus breakdowns that climb with wear" over B "random breakdowns scaled by heat only" | A is readable (wear shows in the inspector, the U overlay and a badge before anything breaks) and teaches the real failure curve and preventive maintenance. B would feel like bad luck. A Service Center takes care of covered machines on its own, so there is no repair chore |
+| 2026-11-23 | E4 coverage visual A "Service overlay on U, like Power and Heat" over B "always-on wear rings on every building" | Rings on 200 buildings clutter the view and a tablet screen; an on-demand overlay matches the existing P/H/N/O pattern, and worn machines still get a badge when it matters (80%+) |
+| 2026-11-23 | E4 power deals as three cards in the ledger; hardware tiers only for pods | The ledger already holds the power price; deals are money decisions. One new pod generation teaches "newer is more work per watt" without forcing replacements (decision on tedium) |
+| 2026-11-23 | E3 market model A "segments with demand curves" over B "one price curve with quality tiers" | A teaches what B hides: customers want different things (price, quality, latency, uptime), spare capacity buys latency, uptime buys enterprise, and model size is a trade-off between quality and serving cost (pillar 4). B would reduce the market to "more compute, higher tier". The scheduler stays automatic so there is no per-segment micromanagement (no tedium) |
+| 2026-11-23 | E3 panel option A "Market & Models modal (B) plus a small sidebar card" over B "everything in a taller sidebar dock" | The segment table, lost-revenue reasons and model shelf need room to teach; a dock would squeeze the objectives on a 1280×800 tablet. The card keeps revenue, the live model, the training run and special orders always visible |
+| 2026-11-23 | E3 model lifecycle: quality is a share of a growing frontier, three run sizes, bigger models cost more compute per query, auto-deploy on by default | Aging forces the next training run without a timer; the size choice is the real decision. Auto-deploy keeps the default game free of chores, and players who want control switch it off |
+| 2026-11-23 | E3 open baseline model at 70% and a 30% loyal-customer floor | Without them the first gateway earned nothing until Dawn-1 shipped, and one night of brownouts sent reputation and income to zero with no way back (soft-lock risk) |
 | 2026-11-23 | Ledger option A "statement modal" over option B "waterfall dock" | A shows payback for every building type (the learning goal), fits next to the Statistics screen, and takes no space from objectives and contracts. The power price strip from B was kept inside A. |

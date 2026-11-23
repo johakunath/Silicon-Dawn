@@ -306,10 +306,18 @@ body.touch #cancelpill.show { display: block; position: absolute; left: 50%; bot
 body.touch #speed button { min-width: 58px; min-height: 52px; font-size: 20px; }
 body.touch #topbar > button { min-height: 52px; }
 body.touch #build .tabs button { min-height: 52px; }
-body.touch #ovbtns button { min-height: 50px; font-size: 14px; }
+body.touch #ovbtns button { min-height: 42px; font-size: 13px; }
 body.touch .setrow button, body.touch .mact button, body.touch #insp .acts button { min-height: 52px; min-width: 64px; }
 body.touch kbd, body.touch #hint { display: none !important; }
 body.touch #side, body.touch #insp { right: 106px; }
 /* touch: the hotbar is a keyboard feature (1–0); the build panel is the picker. Frees the bottom row for the inspector. */
 body.touch #hotbar { display: none; }
 body.touch #insp { max-height: 56%; overflow-y: auto; }
+/* E8: finale score and the friends score sheet */
+.fscore { display: flex; gap: 24px; align-items: center; justify-content: center; flex-wrap: wrap; margin: 6px 0 4px; text-align: left; }
+.fscore .l { font-family: var(--display); letter-spacing: .12em; color: var(--dim); font-size: 14px; }
+.fscore .v { font-family: var(--display); font-size: 44px; font-weight: 700; color: var(--green); line-height: 1.1; }
+.fsub { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; max-width: 520px; }
+.fsub input { flex: 1 1 200px; padding: 8px 10px; font-size: 16px; background: rgba(16,22,44,.9); color: var(--text); border: 1px solid var(--line); }
+.fsub #f-msg { flex-basis: 100%; font-size: 14px; }
+.sheet tr.mine td { background: rgba(111,233,255,.08); }

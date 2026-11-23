@@ -27,4 +27,37 @@
 .lexp.on { border-color: var(--green); color: var(--text); background: rgba(93, 255, 154, .08); }
 .lexp .ic { vertical-align: -3px; }
 .lfoot { max-width: 620px; margin-top: 16px; }
+.ldeals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.ldeal { padding: 10px 12px; background: rgba(16, 22, 44, .9); border: 1px solid var(--line); font-size: 14px; display: flex; flex-direction: column; gap: 6px; }
+.ldeal.on { border-color: var(--green); }
+.ldeal b { font-size: 16px; }
+.ldeal .sbar { width: 100%; }
+.ldeal button { align-self: flex-start; font-size: 14px; padding: 4px 14px; }
+.ldeal button.off { opacity: .45; }
+@media (max-width: 900px) { .ldeals { grid-template-columns: 1fr; } }
 @media (max-width: 900px) { .lgrid { grid-template-columns: 1fr; } }
+
+/* per-building table (compact, in-cell charts) */
+.ltable { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.ltable th { text-align: left; font-family: var(--display); font-size: 12px; letter-spacing: .1em; color: var(--dim); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--line); cursor: pointer; white-space: nowrap; user-select: none; }
+.ltable th:hover, .ltable th.on { color: var(--cyan); }
+.ltable td { padding: 2px 6px; height: 26px; border-bottom: 1px solid rgba(255,255,255,.04); white-space: nowrap; vertical-align: middle; }
+.ltable tr:not(.grp):hover td { background-color: rgba(111,233,255,.06); }
+.ltable tr.grp td { background: rgba(111,233,255,.07); color: var(--cyan); font-family: var(--display); font-size: 13px; letter-spacing: .08em; height: 22px; }
+.ltable tr.grp td.net { background: rgba(111,233,255,.07); }
+.ltable .nm { display: flex; align-items: center; gap: 6px; }
+.ltable .nm img { width: 22px; height: 22px; object-fit: contain; }
+.ltable .num { text-align: right; }
+.ltable .sm, .lkey.sm { font-size: 12px; }
+.ltable b { font-family: var(--display); font-weight: 600; }
+.ltable td.net b { font-weight: 700; }
+.tbar { display: inline-block; width: 70px; height: 8px; background: rgba(255,255,255,.06); margin-right: 6px; vertical-align: middle; }
+.tbar i { display: block; height: 100%; }
+.tbar i.g { background: rgba(93,255,154,.75); } .tbar i.r { background: rgba(255,138,138,.75); }
+.ubar { display: inline-block; width: 52px; height: 6px; background: rgba(255,255,255,.08); vertical-align: middle; }
+.ubar i { display: block; height: 100%; background: var(--cyan); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 5px; vertical-align: middle; }
+.dot.g { background: var(--green); } .dot.am { background: var(--amber); } .dot.r { background: #ff6a6a; }
+.pill { display: inline-block; padding: 0 9px; border-radius: 9px; font-size: 12px; line-height: 17px; border: 1px solid currentColor; }
+.pill.g { color: var(--green); background: rgba(93,255,154,.12); } .pill.am { color: var(--amber); background: rgba(255,179,71,.12); } .pill.r { color: #ff8a8a; background: rgba(255,106,106,.12); }
+.lkey { margin-top: 6px; }

@@ -6,6 +6,7 @@ import {
   OVERDRAFT_PER_ERA, POWER_PRICE, PRICE, PRICE_CURVE, REFUND_GRACE, REFUND_LATE, SELL_SHARE, STIPEND, WATER_PRICE,
 } from './data/economy';
 import { GameState, diffMul, pushFeed, signal, timeOfDay } from './state';
+import { TIER2_COMPUTE } from './data/operations';
 import type { Building, BuildingDef, ItemId } from './types';
 
 // ───────── prices ─────────
@@ -122,6 +123,10 @@ export interface PowerFlows {
   gas: number;
   /** water pumped this tick (units) */
   water: number;
+  /** price of imported power this tick, credits per power-second (hourly, or a fixed-price contract) */
+  price?: number;
+  /** peak curtailment payment per second while it is in force */
+  curtailPay?: number;
 }
 
 export function upkeepPerMin(s: GameState): number {
@@ -134,7 +139,10 @@ export function upkeepPerMin(s: GameState): number {
 export function econTick(s: GameState, dt: number, f: PowerFlows) {
   const e = s.econ;
   const price = powerPrice(s);
-  const bought = f.imported * price * dt;
+  const bought = f.imported * (f.price ?? price) * dt;
+  const curtail = (f.curtailPay ?? 0) * dt;
+  e.income.curtailment += curtail;
+  e.credits += curtail;
   const sold = f.exported * price * FEED_IN * dt;
   const fuel = f.gas * FUEL_PRICE * dt;
   const water = f.water * waterPrice(s);
@@ -231,7 +239,7 @@ export function flowFactor(s: GameState, b: Building, d: BuildingDef): number {
   if (d.it) {
     const tol = s.fx.heatTolerance;
     const throttle = b.heat > 1 + tol ? Math.max(0.45, 1 - (b.heat - 1 - tol)) : 1;
-    return b.powerSat * boost * throttle * s.fx.computeMul * (b.mode === 'training' ? 1.25 : 1);
+    return b.powerSat * boost * throttle * s.fx.computeMul * (b.mode === 'training' ? 1.25 : 1) * (b.tier === 2 ? TIER2_COMPUTE : 1);
   }
   const sev = diffMul(s).eventSeverity * (1 - Math.min(0.8, s.fx.eventResist));
   let mul = 1;

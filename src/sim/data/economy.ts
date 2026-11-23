@@ -28,6 +28,7 @@ export const ECON: Record<string, BuildingEcon> = {
   rack: { capex: 60, upkeep: 1 },
   cooler: { capex: 80, upkeep: 1.5 },
   lab: { capex: 150, upkeep: 3 },
+  service: { capex: 250, upkeep: 6 },
   // Era 3
   substation: { capex: 120, upkeep: 1 },
   gridbat: { capex: 300, upkeep: 3 },
@@ -81,7 +82,7 @@ export const STIPEND = 0.5;
 /** Starting balance per difficulty. */
 export const START_CREDITS: Record<Difficulty, number> = { relaxed: 700, standard: 500, race: 400 };
 /** Funding round paid when an era starts: investors finance the next build-out. Revenue has to justify it later. */
-export const FUNDING: Record<number, number> = { 2: 800, 3: 3500, 4: 6000, 5: 5000 };
+export const FUNDING: Record<number, number> = { 2: 800, 3: 4500, 4: 6000, 5: 5000 };
 export const SANDBOX_CREDITS = 100000;
 
 /** Demolish within this many seconds of building: full credit refund. Later: REFUND_LATE of the credits. Materials always 100%. */

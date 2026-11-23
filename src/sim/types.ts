@@ -48,6 +48,8 @@ export interface BuildingDef {
   workload?: 'research' | 'training' | 'inference' | 'engine';
   /** automation hub radius */
   hub?: number;
+  /** maintenance coverage radius (Service Center; Robot Hubs also service their hub radius) */
+  service?: number;
   emissions?: number; // footprint score penalty / s at full output
   unique?: boolean;
   /** belt/pipe junction: merges and splits any solid or fluid */
@@ -89,11 +91,17 @@ export interface Building {
   boost: number; // hub boost multiplier last tick
   /** power flow last tick: + draw, − generation */
   pw: number;
+  /** 0..1 wear; breakdowns get likely near 1 */
+  wear: number;
+  /** hardware generation (pods built after Next-Gen Accelerators are 2) */
+  tier: number;
+  /** inside service coverage last second (derived, not saved meaningfully) */
+  serviced: boolean;
 }
 
 export type Status =
   | 'ok' | 'idle' | 'no_power' | 'low_power' | 'no_input' | 'output_full'
-  | 'overheat' | 'broken' | 'no_output_link' | 'charging' | 'discharging' | 'night' | 'calm';
+  | 'overheat' | 'broken' | 'worn' | 'no_output_link' | 'charging' | 'discharging' | 'night' | 'calm';
 
 export interface Link {
   id: number;
@@ -160,6 +168,8 @@ export interface TechEffects {
   robots: number;
   bufferMul: number;
   heatTolerance: number;
+  /** 1 = pods built from now on are the next generation */
+  podTier: number;
 }
 
 export interface EventDef {
@@ -195,3 +205,77 @@ export interface Contract {
 }
 
 export type Difficulty = 'relaxed' | 'standard' | 'race';
+
+// ───────── colony market (E3) ─────────
+export type ModelSizeId = 'S' | 'M' | 'L';
+export type MarketSegmentId = 'chat' | 'media' | 'code' | 'enterprise' | 'science';
+
+/** A trained model on the shelf. Quality is absolute (frontier units); divide by the current frontier for the share. */
+export interface Model {
+  id: number;
+  name: string;
+  /** 'base' = the licensed open-weights model every colony starts with */
+  size: ModelSizeId | 'base';
+  quality: number;
+  /** compute per query */
+  cost: number;
+  /** sim time it shipped */
+  born: number;
+  /** credits earned while deployed */
+  earned: number;
+}
+
+export interface TrainingRun {
+  name: string;
+  size: ModelSizeId;
+  target: number;
+  progress: number;
+  /** training units that arrived over fiber (quality bonus) */
+  fiber: number;
+}
+
+/** Why demand went unserved: model too weak, reputation too low, no spare capacity for its latency, or not enough capacity. */
+export type LostReason = 'model' | 'reputation' | 'latency' | 'capacity';
+
+export interface SegmentLive {
+  /** demand before reputation, queries/s */
+  demand: number;
+  served: number;
+  /** credits per second earned and lost */
+  revenue: number;
+  lost: number;
+  reason: LostReason | null;
+  /** credits per query at the deployed model's quality */
+  price: number;
+}
+
+export interface Market {
+  open: boolean;
+  openedAt: number;
+  /** quality of the best rival model, grows every minute; 1 when the market opens */
+  frontier: number;
+  /** 0..1, follows gateway uptime */
+  rep: number;
+  /** last measured gateway uptime, -1 when no gateway is linked */
+  uptime: number;
+  models: Model[];
+  /** deployed model id, 0 = none */
+  deployed: number;
+  nextModelId: number;
+  /** Dawn-N counter */
+  modelNo: number;
+  shipped: number;
+  run: TrainingRun | null;
+  nextSize: ModelSizeId;
+  autoDeploy: boolean;
+  seg: Record<MarketSegmentId, SegmentLive>;
+  /** gateway capacity in queries/s with the deployed model, share of it in use, latency ms */
+  capacity: number;
+  load: number;
+  latency: number;
+  /** smoothed credits per second earned and lost */
+  revRate: number;
+  lostRate: number;
+  /** samples every 10 s: revenue ¢/min and the average price per query */
+  history: { t: number; rev: number; price: number }[];
+}

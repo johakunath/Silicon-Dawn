@@ -5,6 +5,7 @@ import { acceptContract, removeLink, addLink, checkLink, checkPlace, costOf, can
 import { coveredAt, rebuildGrids } from './power';
 import { step } from './sim';
 import { keepLevel } from './economy';
+import { canUpgradeGrid, gridUpgradeCost, requestGridUpgrade } from './operations';
 import { GameState, TICK, countType, hq } from './state';
 import type { Building, ItemId } from './types';
 import { DEPOSIT, idx } from './world';
@@ -59,7 +60,7 @@ export class AutoPlayer {
     const b = place(s, type, spot[0], spot[1]);
     if (!b) return null;
     this.log.push(`[${Math.round(s.time)}s] built ${type} at ${spot}`);
-    if (d.power < 0) this.powerUp(b);
+    if (d.power !== 0 && d.gen !== 'core') this.powerUp(b);
     return b;
   }
 
@@ -103,7 +104,7 @@ export class AutoPlayer {
     rebuildGrids(s);
     const demand = s.buildings.reduce((a, b) => a + Math.max(0, -BUILDING[b.type].power) * (BUILDING[b.type].it || BUILDING[b.type].workload ? 1 : 0.8), 0);
     const gen = s.buildings.reduce((a, b) => a + (BUILDING[b.type].gen === 'solar' ? 6 * s.fx.solarMul : 0), 0) + 6 + n('gas') * 30 + n('wind') * 9 + n('fusion') * 200;
-    for (const b of s.buildings) if (b.grid < 0 && BUILDING[b.type].power < 0 && s.tick % 100 < 20) this.powerUp(b);
+    for (const b of s.buildings) if (b.grid < 0 && BUILDING[b.type].power !== 0 && s.tick % 100 < 20) this.powerUp(b);
     // repair pass: any building missing a fluid/compute input link gets one if a producer is in range
     if (s.tick % 100 < 20) for (const b of s.buildings) {
       const d = BUILDING[b.type];
@@ -138,6 +139,13 @@ export class AutoPlayer {
     }
     if (n('battery') < Math.min(6, 1 + Math.floor(n('solar') / 2))) this.build('battery', cx - 3, cy + 4, 14);
 
+    // ── maintenance: a Service Center wherever machines wear out without one ──
+    if (s.era >= 2 && n('service') < 2 * s.era - 2) {
+      const worn = s.buildings.filter((b) => !b.serviced && b.wear > 0.35 && b.type !== 'service').sort((a, b) => b.wear - a.wear)[0];
+      if (worn) this.build('service', worn.x + 1, worn.y + 1, 8);
+    }
+    // ── a bigger grid connection when cash allows (cheap night power for the base) ──
+    if (s.era >= 3 && canUpgradeGrid(s).ok && s.econ.credits > 4 * gridUpgradeCost(s) && s.ops.gridLevel < s.era) requestGridUpgrade(s);
     // ── era 1 chains ──
     const chain = (dep: number, ext: string, ref: string, count: number) => {
       if (n(ref) >= count && n(ext) >= count) return;
@@ -181,22 +189,34 @@ export class AutoPlayer {
     }
     // ── era 3: grid + hall + workloads ──
     if (s.era >= 3) {
+      // the market pays from Era III: one hall trains Dawn-1, one hall feeds a gateway, then the rest
+      s.market.nextSize = s.era >= 4 && s.techs.includes('fiber') ? 'L' : 'M';
       if (n('substation') < 1) this.build('substation', cx - 10, cy, 14);
-      if (n('gridbat') < 2) this.build('gridbat', cx - 8, cy + 6, 16);
-      if (n('chiller') < n('hall') + n('pod')) this.build('chiller', cx + 10, cy + 6, 22);
-      if (n('trainer') < 1) this.build('trainer', cx + 12, cy + 8, 20);
-      if (n('hall') < 3 && n('trainer') > 0) {
+      // the open baseline model earns from the first gateway at once; the trainer comes next
+      const gwWant = s.era >= 5 ? 4 : s.era >= 4 ? 3 : 2;
+      if (n('gateway') < gwWant && (n('gateway') === 0 || n('trainer') > 0) && s.buildings.filter((b) => b.type === 'gateway').every((g) => s.links.some((l) => l.to === g.id))) {
+        this.build('gateway', cx - 12 - 4 * n('gateway'), cy - 10, 18);
+      }
+      for (const g of s.buildings.filter((b) => b.type === 'gateway')) {
+        if (s.links.some((l) => l.to === g.id)) continue;
+        // a pod in inference mode serves more per watt once accelerators flow; a hall before that
+        const pod = s.era >= 4 && (s.stock.accel ?? 0) >= 4;
+        const r = this.build(pod ? 'pod' : 'hall', g.x + 3, g.y + 3, 8);
+        if (r) { if (pod) r.mode = 'inference'; this.feedFrom(r, 'coolant'); this.sendTo(r, g); }
+        break;
+      }
+      if (n('trainer') < 1 && n('gateway') > 0) this.build('trainer', cx + 12, cy + 8, 20);
+      if (s.market.shipped === 0 && n('trainer') > 0 && !s.links.some((l) => l.to === this.near('trainer')!.id)) {
         const t = this.near('trainer')!;
         const h = this.build('hall', t.x - 2, t.y + 5, 10);
         if (h) { this.feedFrom(h, 'coolant'); this.sendTo(h, t); }
       }
-      if (n('gateway') < 1 && n('hall') > 0) this.build('gateway', cx - 12, cy - 10, 18);
-      if (n('gateway') > 0 && n('rack') >= 6) {
-        const g = this.near('gateway')!;
-        if (!s.links.some((l) => l.to === g.id)) {
-          const r = this.build('hall', g.x + 3, g.y + 3, 8);
-          if (r) { this.feedFrom(r, 'coolant'); this.sendTo(r, g); }
-        }
+      if (n('gridbat') < 2) this.build('gridbat', cx - 8, cy + 6, 16);
+      if (n('chiller') < n('hall') + n('pod')) this.build('chiller', cx + 10, cy + 6, 22);
+      if (n('hall') < 4 && n('trainer') > 0 && n('gateway') > 0) {
+        const t = this.near('trainer')!;
+        const h = this.build('hall', t.x - 2, t.y + 5, 10);
+        if (h) { this.feedFrom(h, 'coolant'); this.sendTo(h, t); }
       }
       for (const c of s.contracts) if (c.state === 'offered') acceptContract(s, c.id);
     }
@@ -212,6 +232,8 @@ export class AutoPlayer {
           if (a) { for (const m of s.buildings.filter((b) => b.type === 'raremine')) this.sendTo(m, a); }
         }
       }
+      // accelerator fabs need chips: link the nearest chip fab (the stockpile keeps its chips for construction)
+      for (const af of s.buildings.filter((b) => b.type === 'accfab')) this.feedFrom(af, 'chips');
       if (n('switch') < 2 && s.techs.includes('fiber')) {
         const t = this.near('trainer');
         if (t) { const sw = this.build('switch', t.x - 2, t.y - 2, 6); if (sw) this.sendTo(sw, t); }
@@ -233,7 +255,9 @@ export class AutoPlayer {
           if (dp) { const c = checkLink(s, dp.id, e.id); if (c.ok) addLink(s, dp.id, e.id); }
         }
         if (n('pod') < 16 && (s.stock.accel ?? 0) >= 4) { const p = this.build('pod', e.x + 3, e.y - 2, 12); if (p) { this.feedFrom(p, 'coolant'); this.sendTo(p, e); } }
-        const halls = s.buildings.filter((b) => (b.type === 'hall' || b.type === 'pod') && !s.links.some((l) => l.from === b.id && l.to === e.id));
+        // compute that serves the market stays on its gateway
+        const servesMarket = (b: Building) => s.links.some((l) => l.from === b.id && BUILDING[s.byId.get(l.to)!.type].workload === 'inference');
+        const halls = s.buildings.filter((b) => (b.type === 'hall' || b.type === 'pod') && !servesMarket(b) && !s.links.some((l) => l.from === b.id && l.to === e.id));
         for (const h of halls.slice(0, 2)) { const c = checkLink(s, h.id, e.id); if (c.ok) addLink(s, h.id, e.id); }
       }
     }
@@ -243,7 +267,7 @@ export class AutoPlayer {
   feedFrom(b: Building, item: ItemId) {
     const s = this.s;
     if (s.links.some((l) => l.to === b.id && l.item === item)) return;
-    const prods = s.buildings.filter((o) => BUILDING[o.type].outputs?.[item] !== undefined).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y));
+    const prods = s.buildings.filter((o) => BUILDING[o.type].outputs?.[item] !== undefined || (item === 'chips' && BUILDING[o.type].storage?.includes(item))).sort((p, q) => Math.hypot(p.x - b.x, p.y - b.y) - Math.hypot(q.x - b.x, q.y - b.y));
     for (const p of prods) { const c = checkLink(s, p.id, b.id); if (c.ok) { addLink(s, p.id, b.id); return; } }
     // build a supplier nearby
     const sup = item === 'coolant' ? (s.era >= 3 ? 'chiller' : 'cooler') : item === 'water' ? 'pump' : null;

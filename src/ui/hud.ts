@@ -10,7 +10,7 @@ import { EVENT } from '../sim/data/events';
 import { GUIDE } from '../sim/data/guide';
 import { ITEMS, LINKS } from '../sim/data/items';
 import { TECHS } from '../sim/data/tech';
-import { acceptContract, canAfford, canResearch, checkLink, costOf, cycleMode, isUnlocked, lockReason, research, PlaceCheck, removeLink, repair } from '../sim/actions';
+import { OVERHAUL_FROM, acceptContract, canAfford, canResearch, checkLink, costOf, cycleMode, isUnlocked, lockReason, research, PlaceCheck, removeLink, repair } from '../sim/actions';
 import type { Link } from '../sim/types';
 import { ENGINE_TARGET, inputCap, outputCap } from '../sim/sim';
 import type { EraScore } from '../sim/state';
@@ -26,7 +26,15 @@ import { CHAPTERS } from './codex';
 import { Tutorial } from './tutorial';
 import { TECH } from '../sim/data/tech';
 import { badgeFor, explain } from './status';
-import { Ledger, affordable, creditCostHtml } from './ledger';
+import { Ledger, affordable, cr, creditCostHtml } from './ledger';
+import { MarketPanel } from './market';
+import { deployedModel, share } from '../sim/market';
+import { breakChance, wearRate } from '../sim/operations';
+import { Telemetry, cleanName } from './telemetry';
+import type { ScoreRow } from './telemetry';
+import { DEFAULT_CLOUD_URL, validUrl } from './cloudsave';
+import { campaignScore, campaignPar, gradeLine } from '../sim/score';
+import { version as GAME_VERSION } from '../../package.json';
 
 const h = (tag: string, cls = '', html = '') => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; };
 const fmt = (v: number) => (Math.abs(v) >= 10000 ? (v / 1000).toFixed(1) + 'k' : Math.abs(v) >= 100 ? Math.round(v).toString() : Math.abs(v) >= 10 ? v.toFixed(0) : v.toFixed(1));
@@ -64,6 +72,9 @@ export class Hud {
   private lastSimT = 0;
   rates = new RateTracker();
   ledger = new Ledger();
+  market = new MarketPanel();
+  /** opt-in telemetry, local run log and the friends score sheet (uses the cloud-save script URL) */
+  telemetry = new Telemetry(() => { const u = this.g.cloud?.cfg.url ?? ''; return validUrl(u) ? u : DEFAULT_CLOUD_URL; }, GAME_VERSION);
   tutorial!: Tutorial;
   hoveredPaletteType: string | null = null;
   private codexCh = 'start';
@@ -172,7 +183,7 @@ export class Hud {
       audio.play('click');
     });
     const ovb = mw.querySelector('#ovbtns')!;
-    for (const [id, lbl, key] of [['power', '⚡ POWER', 'P'], ['heat', '♨ HEAT', 'H'], ['network', '◈ NET', 'N'], ['logistics', '➜ FLOW', 'O']] as const) {
+    for (const [id, lbl, key] of [['power', '⚡ POWER', 'P'], ['heat', '♨ HEAT', 'H'], ['network', '◈ NET', 'N'], ['logistics', '➜ FLOW', 'O'], ['service', '🔧 SERVICE', 'U']] as const) {
       const b = h('button', '', `<span>${lbl}</span><kbd>${key}</kbd>`); b.dataset.ov = id; b.onclick = () => this.g.setOverlay(id); ovb.appendChild(b);
     }
     add('legend', h('div', 'panel'));
@@ -183,7 +194,7 @@ export class Hud {
     add('fps', h('div'));
     add('banner', h('div'));
     // modals
-    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger']) {
+    for (const id of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger', 'market', 'consent', 'scores']) {
       const m = add(id, h('div', 'modal'));
       m.addEventListener('pointerdown', (e) => { if (e.target === m && id !== 'title' && id !== 'finale') this.closeModals(); });
     }
@@ -305,6 +316,7 @@ export class Hud {
       heat: `<div class="ptitle">♨ HEAT OVERLAY</div>${row('linear-gradient(90deg,#3c96ff,#ff5028)', 'Rack heat: cool → hot (throttle above 100°)')}<div class="row">Pipes stay visible. Coolant comes from towers and chillers.</div>`,
       network: `<div class="ptitle">◈ COMPUTE NETWORK</div>${row('#6fe9ff', 'Data cable / fiber carrying compute')}${row('#ffb020', 'Saturated link (bandwidth-bound)')}${row('#ff3030', 'Blocked (the destination is full)')}`,
       logistics: `<div class="ptitle">➜ LOGISTICS FLOW</div>${row('#ffb020', 'Saturated (at capacity, so add a parallel belt)')}${row('#ff3030', 'Blocked (the destination is full or stalled)')}${row('#6a7080', 'Idle (nothing to carry)')}<div class="row">Packet shapes: ◆ quartz/silicon · ⬢ ore/metal · ▪ chips · ● fluids</div>`,
+      service: `<div class="ptitle">🔧 SERVICE COVERAGE</div>${row('#2fd6c0', 'Maintained by a Service Center or Robot Hub')}${row('#ffaa32', 'Outside coverage, wear 50–80%')}${row('#ff3c3c', 'Outside coverage, wear 80%+ (breakdowns likely)')}<div class="row">Machines wear with use and break down near the end of their life. Covered ones stay fresh.</div>`,
     };
     lg.style.display = ov === 'none' ? 'none' : 'block';
     lg.innerHTML = legends[ov] ?? '';
@@ -314,6 +326,7 @@ export class Hud {
   update(dt: number) {
     const g = this.g, s = g.s;
     this.slowT += dt;
+    if (g.started) this.telemetry.observe(s);
     // feed → toasts
     if (s.feed.length < this.seenFeed) this.seenFeed = 0;
     while (this.seenFeed < s.feed.length) {
@@ -418,28 +431,24 @@ export class Hud {
     if (el.innerHTML !== html) el.innerHTML = html;
   }
 
+  /** Market card (Era III on): revenue, deployed model, training run, then special orders. */
   private updateContracts() {
     const s = this.g.s;
     const el = this.els.contracts;
     const cs = s.contracts.filter((c) => c.state === 'offered' || c.state === 'active');
-    el.style.display = cs.length || s.era >= 3 ? 'block' : 'none';
+    el.style.display = s.market.open || cs.length ? 'block' : 'none';
     if (el.style.display === 'none') return;
-    let html = `<h3>CONTRACTS</h3>`;
-    if (!cs.length) html += `<div class="ct"><div class="d">No offers right now. New contracts arrive every few minutes.</div></div>`;
-    for (const c of cs) {
-      const isT = c.kind === 'training';
-      const pr = isT ? c.progress / c.target : c.progress / c.duration;
-      html += `<div class="ct ${c.kind}"><div class="n">${isT ? '△ TRAIN' : '◈ SERVE'} · ${c.title}</div><div class="d">${isT ? `${fmt(c.target)} training in ${Math.round(c.duration / 60)} min` : `${c.target} compute/s at Gateways, ${Math.round(c.duration)} s at ≥90% uptime`} · reward ${c.reward.rp} research + materials</div>`;
-      if (c.state === 'offered') html += `<button data-c="${c.id}">ACCEPT (${Math.ceil(c.expires)}s)</button>`;
-      else html += `<div class="pb"><i style="width:${Math.min(100, pr * 100)}%"></i></div><div class="d">${isT ? `${fmt(c.progress)} / ${fmt(c.target)} · ${Math.ceil(c.duration - c.t)}s left` : `serving ${fmt(s.stats.inferenceRate)}/s · uptime ${Math.round(c.uptime * 100)}% · ${Math.ceil(c.duration - c.t)}s left`}</div>`;
-      html += `</div>`;
-    }
+    let html = s.market.open ? this.market.cardHtml(s) : '';
+    if (cs.length) html += `<div class="ptitle">SPECIAL ORDERS</div>` + cs.map((c) => this.market.orderHtml(s, c)).join('');
     if (el.innerHTML !== html) el.innerHTML = html;
-    // delegated pointerdown: the list re-renders every second (countdowns), which would swallow a normal click
+    // delegated pointerdown: the card re-renders every second (countdowns), which would swallow a normal click
     el.onpointerdown = (e) => {
-      const btn = e.button === 0 ? (e.target as HTMLElement).closest<HTMLElement>('button[data-c]') : null;
-      if (!btn) return;
-      if (!acceptContract(s, Number(btn.dataset.c))) { audio.play('error'); this.toast('You can only run one contract of each kind at a time', 'warn'); }
+      if (e.button !== 0) return;
+      const t = e.target as HTMLElement;
+      if (t.closest('[data-market]')) { this.openMarket(); return; }
+      const btn = t.closest<HTMLElement>('button[data-c]');
+      if (!btn) { if (t.closest('.mkrev, h3')) this.openMarket(); return; }
+      if (!acceptContract(s, Number(btn.dataset.c))) { audio.play('error'); this.toast('You can only run one special order of each kind at a time', 'warn'); }
     };
   }
 
@@ -472,20 +481,6 @@ export class Hud {
     const v = new THREE.Vector3();
     const pulse = Math.sin(g.realTime * 6) * 3;
     let n = 0;
-    // battery fill gauges above battery buildings (when zoomed in enough to read them)
-    if (g.rig.view < 26) for (const b of s.buildings) {
-      const d = BUILDING[b.type];
-      if (!d.battery) continue;
-      v.set(b.x + d.size / 2, baseHeight(s.world, b.x, b.y, d.size) + g.view.buildings.modelHeight(b.type) + 0.25, b.y + d.size / 2);
-      const p = g.rig.worldToScreen(v);
-      if (p.x < -30 || p.y < -30 || p.x > W + 30 || p.y > H + 30) continue;
-      const f = Math.max(0, Math.min(1, b.charge / (d.battery.capacity * s.fx.batteryMul)));
-      const x = p.x - 16, y = p.y - 8;
-      ctx.fillStyle = 'rgba(5,8,18,0.75)'; ctx.fillRect(x - 2, y - 2, 38, 18);
-      ctx.strokeStyle = '#c9d6ee'; ctx.lineWidth = 1.5; ctx.strokeRect(x, y, 30, 14); ctx.fillStyle = '#c9d6ee'; ctx.fillRect(x + 30, y + 4, 3, 6);
-      ctx.fillStyle = f > 0.5 ? '#5dff9a' : f > 0.2 ? '#ffb347' : '#ff5a5a'; ctx.fillRect(x + 2, y + 2, 26 * f, 10);
-      if (b.status === 'charging') { ctx.fillStyle = '#fff'; ctx.font = '700 12px Rajdhani, sans-serif'; ctx.fillText('⚡', x + 15, y + 7); ctx.font = '700 17px Rajdhani, sans-serif'; }
-    }
     for (const b of s.buildings) {
       const kind = badgeFor(b);
       if (!kind) continue;
@@ -550,9 +545,22 @@ export class Hud {
     if (d.it) add('Heat', `<span style="color:${b.heat > 1 ? '#ff5a5a' : b.heat > 0.7 ? '#ffb347' : '#5dff9a'}">${Math.round(b.heat * 100)}°</span>`);
     if (d.it || d.workload) add('Activity', `${Math.round(b.activity * 100)}%`);
     if (b.boost > 1) add('Robot boost', '+30%');
+    if (d.workload === 'inference' && s.market.open) {
+      const dm = deployedModel(s);
+      add('Serving', dm ? `${dm.name} (${Math.round(share(s, dm) * 100)}%)` : 'no model');
+      add('Market', `${cr(s.market.revRate * 60)}/min · load ${Math.round(s.market.load * 100)}% · rep ${Math.round(s.market.rep * 100)}%`);
+    }
+    if (d.workload === 'training' && s.market.run) add('Training', `${s.market.run.name} ${Math.round((s.market.run.progress / s.market.run.target) * 100)}% (B)`);
     if (d.workload === 'engine') add('Engine charge', `${(s.engine.progress * 100).toFixed(2)}% of ${fmt(ENGINE_TARGET)}`);
     if (d.storage) add('Stockpile', 'all refined goods');
     if (b.type === 'hq') add('Research trickle', '+0.08/s');
+    if (wearRate(b.type) > 0) {
+      const w = Math.round(b.wear * 100);
+      const col = b.wear >= 0.8 ? '#ff5a5a' : b.wear >= 0.5 ? '#ffb347' : '#5dff9a';
+      add('Wear', `<span style="color:${col}">${w}%</span> · ${b.serviced ? '<span style="color:#2fd6c0">maintained</span>' : `no service, breakdown risk ${(breakChance(b.wear) * 6000).toFixed(b.wear > 0.5 ? 0 : 1)}%/min`}`);
+    }
+    if (d.service) add('Service', `${d.service} tiles · ${s.buildings.filter((o) => o.serviced).length} buildings maintained by all centres`);
+    if (b.type === 'pod') add('Hardware', b.tier === 2 ? 'Next-gen (+35% compute)' : s.fx.podTier > 0 ? 'Previous generation (still works)' : 'Current generation');
     if (b.type === 'pod') add('Mode <kbd>M</kbd>', b.mode === 'training' ? 'Training (+25% compute, worse inference)' : b.mode === 'inference' ? 'Inference (+30% at Gateways, cooler)' : 'Balanced');
     const bufs: string[] = [];
     for (const [it] of Object.entries(d.inputs ?? {}) as [ItemId, number][]) {
@@ -580,12 +588,13 @@ export class Hud {
     const ratioHtml = ratios.length ? `<details class="ratio"><summary>How many do I need?</summary>${ratios.map((r) => `<div>${r}</div>`).join('')}</details>` : '';
     // Static shell (header, ratio <details>, action buttons) is rebuilt only when the selection or its button set
     // changes; live values are patched in place. Rebuilding everything at 4 Hz swallowed clicks and closed <details>.
-    const key = `B${b.id}|${b.broken > 0}|${ratioHtml.length}`;
+    const canFix = b.broken > 0 || b.wear >= OVERHAUL_FROM;
+    const key = `B${b.id}|${canFix}|${b.broken > 0}|${ratioHtml.length}`;
     if (force || el.dataset.key !== key) {
       el.dataset.key = key;
       el.innerHTML = `<div class="hd"><img src="${thumb(b.type)}"><div><h3>${d.name}</h3><div class="role">${d.desc}</div></div></div>
       <div data-live></div>${ratioHtml}<div data-core></div>
-      <div class="acts">${b.type === 'hq' ? '<button id="i-stats" data-tip="Full production & power statistics (I)">📊 STATISTICS <kbd>I</kbd></button>' : ''}${b.type === 'pod' ? '<button id="i-mode" data-tip="Cycle Balanced → Training → Inference">MODE <kbd>M</kbd></button>' : ''}${b.broken > 0 ? '<button id="i-rep">REPAIR (10 metal) <kbd>R</kbd></button>' : ''}<button id="i-link" data-tip="Start a link from this building, then click the other building">⟿ CONNECT <kbd>L</kbd></button>${b.type !== 'hq' ? '<button id="i-move" data-tip="Pick it up and place it elsewhere (free)">✥ MOVE <kbd>V</kbd></button><button id="i-del" data-tip="Remove it. Refunds 100%.">✕ DEMOLISH <kbd>Del</kbd></button>' : ''}</div>`;
+      <div class="acts">${b.type === 'hq' ? '<button id="i-stats" data-tip="Full production & power statistics (I)">📊 STATISTICS <kbd>I</kbd></button>' : ''}${b.type === 'pod' ? '<button id="i-mode" data-tip="Cycle Balanced → Training → Inference">MODE <kbd>M</kbd></button>' : ''}${b.broken > 0 ? '<button id="i-rep">REPAIR (10 metal) <kbd>R</kbd></button>' : canFix ? '<button id="i-rep" data-tip="Replace worn parts: wear back to 0%">OVERHAUL (10 metal) <kbd>R</kbd></button>' : ''}<button id="i-link" data-tip="Start a link from this building, then click the other building">⟿ CONNECT <kbd>L</kbd></button>${b.type !== 'hq' ? '<button id="i-move" data-tip="Pick it up and place it elsewhere (free)">✥ MOVE <kbd>V</kbd></button><button id="i-del" data-tip="Remove it. Refunds 100%.">✕ DEMOLISH <kbd>Del</kbd></button>' : ''}</div>`;
       const q = (id: string) => el.querySelector(id) as HTMLElement | null;
       q('#i-mode')?.addEventListener('click', () => { cycleMode(s, b.id); this.refreshInspector(true); });
       q('#i-rep')?.addEventListener('click', () => { if (!repair(s, b.id)) audio.play('error'); });
@@ -706,7 +715,7 @@ export class Hud {
   blockingModal() { return this.openModal !== null && this.openModal !== 'score'; }
   closeModals() {
     if (this.openModal === 'title') return;
-    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats', 'ledger']) this.els[id].classList.remove('show');
+    for (const id of ['guide', 'tech', 'menu', 'score', 'finale', 'save', 'stats', 'ledger', 'market', 'consent', 'scores']) this.els[id].classList.remove('show');
     const was = this.openModal;
     if (was) audio.play('close');
     this.openModal = null;
@@ -714,7 +723,7 @@ export class Hud {
     if (was && !this.g.started) this.showTitle();
   }
   private show(id: string) {
-    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger']) this.els[m].classList.toggle('show', m === id);
+    for (const m of ['guide', 'tech', 'menu', 'title', 'score', 'finale', 'save', 'stats', 'ledger', 'market', 'consent', 'scores']) this.els[m].classList.toggle('show', m === id);
     this.openModal = id;
     audio.play('open');
   }
@@ -758,6 +767,27 @@ export class Hud {
     this.hideTip();
     this.ledger.opened = true;
     this.show('ledger');
+  }
+
+  openMarket() {
+    const m = this.els.market;
+    const render = () => {
+      const top = m.querySelector('.market')?.scrollTop ?? 0;
+      m.innerHTML = this.market.html(this.g.s);
+      const card = m.querySelector('.market');
+      if (card) card.scrollTop = top;
+    };
+    m.onpointerdown = (e) => {
+      const t = e.target as HTMLElement;
+      if (this.market.handle(t, this.g.s)) { audio.play('click'); render(); }
+      else if (t.closest('[data-x]')) this.closeModals();
+      else if (t.closest('[data-codex]')) this.openGuide('market');
+    };
+    render();
+    const timer = window.setInterval(() => { if (this.openModal !== 'market') { clearInterval(timer); return; } render(); }, 1000);
+    this.hideTip();
+    this.market.opened = true;
+    this.show('market');
   }
 
   openStats() {
@@ -846,9 +876,10 @@ export class Hud {
       <div class="setrow"><label>Edge panning</label><button id="s-edge" class="${st.edgePan ? 'on' : ''}">${st.edgePan ? 'ON' : 'OFF'}</button></div>
       <div class="setrow"><label>UI scale</label><input type="range" min="0.8" max="1.4" step="0.05" value="${st.uiScale}" id="s-ui"></div>
       ${graphicsRows(g)}
+      <div class="setrow"><label data-tip="Opt-in. A summary of each run (era times, money, stalls, breakdowns) goes to the game's Google Sheet under a random player id. No name, no email.">Anonymous run data</label><button id="s-tele" class="${this.telemetry.prefs.consent === 'yes' ? 'on' : ''}">${this.telemetry.prefs.consent === 'yes' ? (this.telemetry.sharing() ? 'SHARING' : 'ON (no cloud script yet)') : 'OFF'}</button><button id="s-log" data-tip="Download this device's last 5 run logs as JSON">RUN LOG (JSON)</button></div>
       <div class="setrow"><label>Performance stats</label><button id="s-fps" class="${st.showFps ? 'on' : ''}">${st.showFps ? 'SHOWN (F3)' : 'HIDDEN (F3)'}</button></div>
-      <div class="mact" style="justify-content:space-between"><div style="display:flex;gap:8px"><button id="m-save">SAVE / LOAD</button><button id="m-title">MAIN MENU</button></div><button class="primary" data-x>RESUME</button></div>
-      <div style="margin-top:18px;color:#93a4c4;font-size:15px;line-height:1.6"><b>Keys:</b> WASD pan · wheel zoom · Q/E rotate · 1–9 build · L link · X demolish · Del demolish selected · P/H/N/O overlays · T tech · K ledger · J guide · Z next problem · C core · F focus · M pod mode · R repair · Space pause · +/− speed · F3 stats<br><b>Touch:</b> drag pan · pinch zoom · twist rotate · tap place or select · hold to inspect · right-edge buttons rotate, zoom, copy, next problem · red pill cancels</div></div>`;
+      <div class="mact" style="justify-content:space-between"><div style="display:flex;gap:8px"><button id="m-save">SAVE / LOAD</button><button id="m-scores">SCORE SHEET</button><button id="m-title">MAIN MENU</button></div><button class="primary" data-x>RESUME</button></div>
+      <div style="margin-top:18px;color:#93a4c4;font-size:15px;line-height:1.6"><b>Keys:</b> WASD pan · wheel zoom · Q/E rotate · 1–9 build · L link · X demolish · Del demolish selected · P/H/N/O/U overlays · T tech · K ledger · B market · J guide · Z next problem · C core · F focus · M pod mode · R repair · Space pause · +/− speed · F3 stats<br><b>Touch:</b> drag pan · pinch zoom · twist rotate · tap place or select · hold to inspect · right-edge buttons rotate, zoom, copy, next problem · red pill cancels</div></div>`;
     const q = (id: string) => m.querySelector(id) as HTMLInputElement;
     q('#s-vol').oninput = () => { st.volume = Number(q('#s-vol').value); g.applySettings(); };
     q('#s-mus').oninput = () => { st.music = Number(q('#s-mus').value); g.applySettings(); };
@@ -859,6 +890,9 @@ export class Hud {
     q('#s-fps').onclick = () => { st.showFps = !st.showFps; g.applySettings(); this.openMenu(); };
     bindGraphics(m, g, () => this.openMenu());
     q('#m-save').onclick = () => this.openSave();
+    q('#m-scores').onclick = () => this.openScores();
+    q('#s-tele').onclick = () => { this.telemetry.setConsent(this.telemetry.prefs.consent === 'yes' ? 'no' : 'yes'); this.openMenu(); };
+    q('#s-log').onclick = () => this.telemetry.exportLogs();
     q('#m-title').onclick = () => { g.autosave(); this.showTitle(); };
     (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
     this.show('menu');
@@ -914,7 +948,48 @@ export class Hud {
     q('#t-sand').onclick = () => { this.closeTitle(); g.newGame(Number((q('#t-seed') as HTMLInputElement).value) || 1, 'standard', 'sandbox'); };
     this.show('title');
   }
-  private closeTitle() { this.els.title.classList.remove('show'); this.openModal = null; audio.init(); audio.play('era', 1); }
+  private closeTitle() {
+    this.els.title.classList.remove('show'); this.openModal = null; audio.init(); audio.play('era', 1);
+    if (this.telemetry.prefs.consent === null) this.openConsent();
+  }
+
+  /** Asked once, before the first game: share anonymous run summaries, or keep everything on this device. */
+  openConsent() {
+    const m = this.els.consent;
+    m.innerHTML = `<div class="mcard panel" style="width:760px"><h1>HELP IMPROVE SILICON DAWN?</h1>
+      <div class="lede">Share an anonymous summary of each run: era times, money, stalls, breakdowns, and when you stop playing. It helps balance the game.</div>
+      <div class="lede" style="font-size:16px">No name, no email, no account: only a random player id (<code>${this.telemetry.prefs.player}</code>). A copy stays on this device and <b>Menu → Run log</b> exports it. You can change your mind any time in the Menu.</div>
+      <div class="mact" style="justify-content:flex-start"><button class="primary" data-yes>SHARE ANONYMOUSLY</button><button data-no>NO THANKS, KEEP IT LOCAL</button></div></div>`;
+    (m.querySelector('[data-yes]') as HTMLElement).onclick = () => { this.telemetry.setConsent('yes'); this.closeModals(); this.toast('Thanks! Anonymous run summaries are on.', 'good'); };
+    (m.querySelector('[data-no]') as HTMLElement).onclick = () => { this.telemetry.setConsent('no'); this.closeModals(); };
+    this.show('consent');
+  }
+
+  /** Friends score sheet: top campaign scores per difficulty from the owner's Google Sheet. */
+  openScores(difficulty: string = this.g.s.difficulty) {
+    const m = this.els.scores;
+    const t = this.telemetry;
+    const tabs = (['relaxed', 'standard', 'race'] as const).map((d) => `<button data-d="${d}" class="${d === difficulty ? 'on' : ''}">${d.toUpperCase()}</button>`).join('');
+    const shell = (body: string) => `<div class="mcard panel" style="width:900px"><h1>FRIENDS SCORE SHEET</h1>
+      <div class="lede">Finished campaigns, best first. Score = average era rating × 10,000, minus 20 per minute over the campaign par (${Math.round(campaignPar())} min).</div>
+      <div class="mact" style="justify-content:flex-start;margin:0 0 10px">${tabs}</div>${body}
+      <div class="mact"><button class="primary" data-x>BACK</button></div></div>`;
+    const bind = () => {
+      m.querySelectorAll<HTMLElement>('[data-d]').forEach((b) => { b.onclick = () => this.openScores(b.dataset.d!); });
+      (m.querySelector('[data-x]') as HTMLElement).onclick = () => this.closeModals();
+    };
+    if (!t.scoresReady()) {
+      m.innerHTML = shell('<div class="dim">The score sheet needs the cloud script. Set it up once under Menu → Save / Load → Cloud save (steps in tools/apps-script/README.md).</div>');
+      bind(); this.show('scores'); return;
+    }
+    m.innerHTML = shell('<div class="dim">Loading…</div>');
+    bind(); this.show('scores');
+    t.scores(difficulty).then((rows) => {
+      if (this.openModal !== 'scores') return;
+      m.innerHTML = shell(scoreTable(rows));
+      bind();
+    }).catch((e) => { if (this.openModal === 'scores') { m.innerHTML = shell(`<div class="r">Could not load scores: ${String((e as Error).message ?? e).replace(/[<>&]/g, '')}</div>`); bind(); } });
+  }
 
   showEraBanner(era: number) {
     const e = ERAS[era - 1];
@@ -941,13 +1016,32 @@ export class Hud {
     try { localStorage.setItem('sd_sandbox_unlocked', '1'); } catch { /* */ }
     const m = this.els.finale;
     const rows = s.eraScores.map((e) => `<div class="c"><div class="v">${e.grade}</div><div class="l">${ERAS[e.era - 1].name}<br>${Math.round(e.time / 60)} min</div></div>`).join('');
-    m.innerHTML = `<div class="mcard panel" style="width:1000px;text-align:center"><h1 style="font-size:64px">THE DAWN ENGINE IGNITES</h1>
+    m.innerHTML = `<div class="mcard panel" style="width:1000px;text-align:center;max-height:94%;overflow-y:auto;box-sizing:border-box"><h1 style="font-size:64px">THE DAWN ENGINE IGNITES</h1>
       <div class="lede" style="margin:0 auto;font-size:20px;line-height:1.6">From one solar panel to a continent of light. Your civilisation has built the most elaborate machine in its history.<br><br><b>This ending is fiction.</b> Nobody knows of any amount of compute, power or silicon that guarantees general intelligence. What you actually mastered is real: energy that must be generated every second, heat that has to go somewhere, water, materials, networks, and reliability under stress.</div>
       <div class="score" style="grid-template-columns:repeat(${Math.max(1, s.eraScores.length)},1fr)">${rows}</div>
-      <div class="lede" style="margin:0 auto">Total time: ${Math.round(s.time / 60)} minutes · ${s.buildings.length} buildings · ${Math.round(s.stats.trainTotal).toLocaleString()} training · ${s.stats.contractsDone} contracts.<br><b style="color:#5dff9a">Sandbox mode is now unlocked</b> on the main menu.</div>
+      <div class="lede" style="margin:0 auto">Total time: ${Math.round(s.time / 60)} minutes · ${s.buildings.length} buildings · ${s.market.shipped} models shipped · ${cr(s.econ.income.market)} earned on the colony market.<br><b style="color:#5dff9a">Sandbox mode is now unlocked</b> on the main menu.</div>
+      <div class="fscore"><div><div class="l">CAMPAIGN SCORE</div><div class="v">${campaignScore(s).toLocaleString('en-US')}</div><div class="dim">${gradeLine(s)} · ${Math.round(s.time / 60)} min (par ${Math.round(campaignPar())})</div></div>
+        ${s.mode === 'campaign' ? `<div class="fsub"><input id="f-name" maxlength="16" placeholder="Your name for the score sheet" value="${cleanName(this.telemetry.prefs.name).replace(/"/g, '')}"><button id="f-send">SUBMIT SCORE</button><button id="f-list">SCORE SHEET</button><div id="f-msg" class="dim"></div></div>` : ''}</div>
       <div class="mact" style="justify-content:center"><button data-k>KEEP WATCHING</button><button class="primary" data-t>MAIN MENU</button></div></div>`;
     (m.querySelector('[data-k]') as HTMLElement).onclick = () => { m.classList.remove('show'); this.openModal = null; };
+    const msg = m.querySelector('#f-msg') as HTMLElement | null;
+    (m.querySelector('#f-list') as HTMLElement | null)?.addEventListener('click', () => this.openScores(s.difficulty));
+    (m.querySelector('#f-send') as HTMLElement | null)?.addEventListener('click', () => {
+      if (!this.telemetry.scoresReady()) { msg!.textContent = 'The score sheet needs the cloud script (Menu → Save / Load → Cloud save).'; return; }
+      msg!.textContent = 'Sending…';
+      this.telemetry.submitScore(s, (m.querySelector('#f-name') as HTMLInputElement).value)
+        .then(() => { msg!.textContent = 'Submitted. Open the score sheet to see where you stand.'; })
+        .catch((e) => { msg!.textContent = `Not sent: ${String((e as Error).message ?? e)}`; });
+    });
     (m.querySelector('[data-t]') as HTMLElement).onclick = () => { m.classList.remove('show'); this.openModal = null; this.showTitle(); };
     setTimeout(() => { if (this.g.started && this.g.s === s) this.show('finale'); }, 9000);
   }
+}
+
+function scoreTable(rows: ScoreRow[]): string {
+  if (!rows.length) return '<div class="dim">No scores yet. Finish a campaign and submit yours from the final screen.</div>';
+  const esc = (v: string) => v.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  const ago = (iso: string) => { const d = (Date.now() - Date.parse(iso)) / 86400000; return !Number.isFinite(d) ? '' : d < 1 ? 'today' : d < 2 ? 'yesterday' : `${Math.round(d)} days ago`; };
+  const medal = ['#ffd27a', '#c9d6ee', '#c9a27a'];
+  return `<table class="stab sheet"><tr><th>#</th><th>Name</th><th>Score</th><th>Time</th><th>Era grades</th><th>When</th></tr>${rows.map((r, i) => `<tr class="${r.mine ? 'mine' : ''}"><td style="color:${medal[i] ?? '#93a4c4'}">${i + 1}</td><td>${esc(String(r.name))}${r.mine ? ' <span class="dim">(you)</span>' : ''}</td><td class="g"><b>${Math.round(r.score).toLocaleString('en-US')}</b></td><td>${Math.round(r.minutes)} min</td><td>${esc(String(r.grades))}</td><td class="dim">${ago(r.at)}</td></tr>`).join('')}</table>`;
 }

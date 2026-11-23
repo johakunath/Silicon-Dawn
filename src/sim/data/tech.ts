@@ -15,6 +15,7 @@ export const TECHS: TechDef[] = [
   { id: 'dense', name: 'Dense Racks', branch: 'capacity', era: 3, cost: 120, requires: ['drills'], desc: 'Compute +15% and data cable capacity +50%.', effect: { computeMul: 0.15, dataMul: 0.5 } },
   { id: 'fiber', name: 'Fiber Optics', branch: 'capacity', era: 4, cost: 150, requires: ['dense'], desc: 'New compute links are fiber (5× bandwidth, 30-tile reach) and Fiber Switches unlock. Training over fiber is twice as efficient.', effect: { fiber: 1 } },
   { id: 'express', name: 'Express Belts', branch: 'capacity', era: 4, cost: 200, requires: ['fiber'], desc: 'Conveyor capacity +100%.', effect: { conveyorMul: 1.0 } },
+  { id: 'nextgen', name: 'Next-Gen Accelerators', branch: 'capacity', era: 4, cost: 240, requires: ['fiber'], desc: 'Accelerator Pods built from now on make 35% more compute for the same power. Older pods keep working.', effect: { podTier: 1 } },
   { id: 'fusion', name: 'Fusion Ignition', branch: 'capacity', era: 4, cost: 420, requires: ['express'], desc: 'Unlocks the (fictional) Fusion Reactor: 200 firm, clean power.', effect: { fusion: 1 } },
   // Reliability
   { id: 'cells', name: 'Deep-Cycle Cells', branch: 'reliability', era: 1, cost: 15, desc: 'Battery capacity +60%.', effect: { batteryMul: 0.6 } },

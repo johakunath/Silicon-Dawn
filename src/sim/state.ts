@@ -1,4 +1,4 @@
-import type { ActiveEvent, Building, Contract, Difficulty, ItemId, Link, TechEffects } from './types';
+import type { ActiveEvent, Building, Contract, Difficulty, ItemId, Link, Market, MarketSegmentId, SegmentLive, TechEffects } from './types';
 import { World, generateWorld } from './world';
 import { Rng } from './rng';
 import { BUILDING } from './data/buildings';
@@ -54,9 +54,9 @@ export interface Stats {
   pueWindow: number[]; // last 60s PUE samples
 }
 
-export type IncomeLine = 'exports' | 'power_sold' | 'contracts' | 'funding' | 'stipend' | 'grants';
+export type IncomeLine = 'market' | 'exports' | 'power_sold' | 'curtailment' | 'contracts' | 'funding' | 'stipend' | 'grants';
 export type CostLine = 'power_bought' | 'fuel' | 'water' | 'upkeep' | 'interest';
-export const INCOME_LINES: IncomeLine[] = ['contracts', 'exports', 'power_sold', 'funding', 'stipend', 'grants'];
+export const INCOME_LINES: IncomeLine[] = ['market', 'contracts', 'exports', 'power_sold', 'curtailment', 'funding', 'stipend', 'grants'];
 export const COST_LINES: CostLine[] = ['fuel', 'upkeep', 'power_bought', 'water', 'interest'];
 
 /** Colony economy. Totals are cumulative credits since the start, so the UI can derive per-minute rates. */
@@ -80,10 +80,46 @@ export function newEcon(difficulty: Difficulty, mode: 'campaign' | 'sandbox', cr
   const c = credits ?? (mode === 'sandbox' ? SANDBOX_CREDITS : START_CREDITS[difficulty]);
   return {
     credits: c,
-    income: { exports: 0, power_sold: 0, contracts: 0, funding: 0, stipend: 0, grants: 0 },
+    income: { market: 0, exports: 0, power_sold: 0, curtailment: 0, contracts: 0, funding: 0, stipend: 0, grants: 0 },
     costs: { power_bought: 0, fuel: 0, water: 0, upkeep: 0, interest: 0 },
     capex: 0, exported: {}, sell: { ...SELL_DEFAULT }, grants: 0, eraGrants: 0, minCredits: c,
   };
+}
+
+export const SEGMENT_IDS: MarketSegmentId[] = ['chat', 'media', 'code', 'enterprise', 'science'];
+
+export function emptySegment(): SegmentLive { return { demand: 0, served: 0, revenue: 0, lost: 0, reason: null, price: 0 }; }
+
+/** A closed market: it opens in Era III (or at once in the sandbox), see openMarket() in market.ts. */
+export function newMarket(): Market {
+  return {
+    open: false, openedAt: 0, frontier: 1, rep: 0, uptime: -1, models: [], deployed: 0, nextModelId: 1, modelNo: 1, shipped: 0,
+    run: null, nextSize: 'M', autoDeploy: true,
+    seg: Object.fromEntries(SEGMENT_IDS.map((id) => [id, emptySegment()])) as Record<MarketSegmentId, SegmentLive>,
+    capacity: 0, load: 0, latency: 0, revRate: 0, lostRate: 0, history: [],
+  };
+}
+
+/** Operations: grid connection, power deals. Wear lives on each building. */
+export interface Ops {
+  /** grid connection upgrades done (each adds GRID_STEP import power at the Core) */
+  gridLevel: number;
+  /** sim time the queued upgrade is ready, 0 = none queued */
+  gridReadyAt: number;
+  /** fixed-price power contract runs until this sim time (0 = none) */
+  fixedUntil: number;
+  /** enrolled in peak curtailment */
+  dr: boolean;
+  /** curtailment in force right now (derived each tick) */
+  drNow: boolean;
+  breakdowns: number;
+  /** feed batching for breakdown news: time of the last line, breakdowns since */
+  newsAt: number;
+  newsPending: number;
+}
+
+export function newOps(): Ops {
+  return { gridLevel: 0, gridReadyAt: 0, fixedUntil: 0, dr: false, drNow: false, breakdowns: 0, newsAt: 0, newsPending: 0 };
 }
 
 export interface GameState {
@@ -106,6 +142,8 @@ export interface GameState {
   stock: Partial<Record<ItemId, number>>;
   rp: number;
   econ: Econ;
+  market: Market;
+  ops: Ops;
   techs: string[];
   fx: TechEffects;
   stats: Stats;
@@ -131,7 +169,7 @@ export interface GameState {
 export const BASE_FX: TechEffects = {
   solarMul: 1, windMul: 1, conveyorMul: 1, dataMul: 1, extractMul: 1, refineMul: 1, computeMul: 1,
   coolingMul: 1, coolingPowerMul: 1, batteryMul: 1, eventResist: 0, autoRepair: 1, fiber: 0, fusion: 0,
-  robots: 0, bufferMul: 1, heatTolerance: 0,
+  robots: 0, bufferMul: 1, heatTolerance: 0, podTier: 0,
 };
 
 export function emptyStats(): Stats {
@@ -148,16 +186,16 @@ export const START_STOCK: Partial<Record<ItemId, number>> = { metal: 70, silicon
 export function newBuilding(id: number, type: string, x: number, y: number, t: number): Building {
   return {
     id, type, x, y, inBuf: {}, outBuf: {}, activity: 0, status: 'idle', heat: 0, grid: -1, powerSat: 0, charge: 0,
-    mode: 'balanced', broken: 0, built: t, produced: 0, richness: 1, rx: 0, rxFiber: 0, rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, boost: 1, pw: 0,
+    mode: 'balanced', broken: 0, built: t, produced: 0, richness: 1, rx: 0, rxFiber: 0, rxQ: 0, rxT: 0, outQ: 1, outT: 1, outF: 1, boost: 1, pw: 0, wear: 0, tier: 1, serviced: false,
   };
 }
 
 export function createState(seed: number, difficulty: Difficulty = 'standard', mode: 'campaign' | 'sandbox' = 'campaign'): GameState {
   const world = generateWorld(seed);
   const s: GameState = {
-    version: 3, seed, difficulty, mode, time: 0, tick: 0, era: mode === 'sandbox' ? 5 : 1, eraStart: 0, done: {},
+    version: 4, seed, difficulty, mode, time: 0, tick: 0, era: mode === 'sandbox' ? 5 : 1, eraStart: 0, done: {},
     world, occ: new Int32Array(world.size * world.size), buildings: [], byId: new Map(), nextId: 1, links: [], nextLinkId: 1,
-    stock: { ...START_STOCK }, rp: 0, econ: newEcon(difficulty, mode), techs: [], fx: { ...BASE_FX }, stats: emptyStats(), grids: [], gridEdges: [], gridDirty: true,
+    stock: { ...START_STOCK }, rp: 0, econ: newEcon(difficulty, mode), market: newMarket(), ops: newOps(), techs: [], fx: { ...BASE_FX }, stats: emptyStats(), grids: [], gridEdges: [], gridDirty: true,
     rng: new Rng(seed ^ 0x5eed), events: [], nextEventAt: 300, contracts: [], nextContractAt: 60, nextContractId: 1,
     engine: { progress: 0, accel: 0, ignited: false, igniteTime: 0 }, eraScores: [],
     flags: { campaignDone: false, sandboxUnlocked: false, tutorial: true }, feed: [], signals: [], pendingEra: 0, autoLink: true,

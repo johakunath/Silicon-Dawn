@@ -37,7 +37,7 @@ describe('Apps Script backend', () => {
 
   it('ping, then save and load a save larger than one Sheets cell', () => {
     const { post, sheets, api } = loadScript();
-    expect(post({ op: 'ping' })).toMatchObject({ ok: true, version: 1 });
+    expect(post({ op: 'ping' })).toMatchObject({ ok: true, version: 2 });
     const data = 'x'.repeat(api.CHUNK * 2 + 123) + '=tail';
     const r = post({ op: 'save', code, enc: 'raw', data, meta: { era: 2, min: 30 } });
     expect(r).toMatchObject({ ok: true, parts: 3 });
@@ -87,5 +87,48 @@ describe('Apps Script backend', () => {
     expect(post({ op: 'save', code, data: '' }).ok).toBe(false);
     expect(post({ op: 'drop_tables' }).ok).toBe(false);
     expect(post({ op: 'load', code })).toMatchObject({ ok: true, found: false });
+  });
+
+  describe('telemetry and scores (E8)', () => {
+    const player = 'k3v9q2m7xa', run = 'r1r1r1r1r1';
+    it('telemetry keeps one row per run and updates it in place', () => {
+      const { post, sheets } = loadScript();
+      expect(post({ op: 'telemetry', player, run, row: { era: 2, minutes: 9, status: 'active' }, summary: { a: 1 } }).ok).toBe(true);
+      expect(post({ op: 'telemetry', player, run, row: { era: 3, minutes: 20, status: 'left' }, summary: { a: 2 } }).ok).toBe(true);
+      post({ op: 'telemetry', player, run: 'r2r2r2r2r2', row: { era: 1 }, summary: {} });
+      const rows = sheets.get('telemetry')!;
+      expect(rows.length).toBe(3); // header + two runs
+      expect(rows[1][7]).toBe('3');
+      expect(rows[1][9]).toBe('left');
+      expect(JSON.parse(rows[1][15])).toEqual({ a: 2 });
+    });
+    it('rejects bad ids and oversized summaries; neutralises formulas in text', () => {
+      const { post, sheets } = loadScript();
+      expect(post({ op: 'telemetry', player: 'Bob', run, summary: {} })).toMatchObject({ ok: false, error: 'bad player id' });
+      expect(post({ op: 'telemetry', player, run, summary: { x: 'y'.repeat(40000) } })).toMatchObject({ ok: false, error: 'summary too large' });
+      post({ op: 'score', player, run, name: '=HYPERLINK("x")', difficulty: 'standard', score: 5 });
+      expect(sheets.get('scores')![1][3].startsWith('=')).toBe(false);
+      // leading whitespace must not hide a formula: trimmed first, then neutralised
+      for (const name of [' =1+1', '\t+SUM(A1)', '  @x', ' - =2']) {
+        post({ op: 'score', player, run, name, difficulty: 'standard', score: 5 });
+        expect(sheets.get('scores')![1][3]).toMatch(/^[^=+\-@\s]/);
+      }
+      post({ op: 'telemetry', player, run, row: { game: ' =cmd', status: ' +x', grades: '  -A' }, summary: {} });
+      for (const c of sheets.get('telemetry')![1].slice(3, 11)) expect(c).not.toMatch(/^\s*[=+\-@]/);
+      expect(post({ op: 'score', player, run, name: '   ', score: 5 })).toMatchObject({ ok: false });
+    });
+    it('scores: one row per run, filtered by difficulty, best first, ties by time, without player ids', () => {
+      const { post } = loadScript();
+      post({ op: 'score', player, run, name: 'Jo', difficulty: 'standard', minutes: 90, score: 8000 });
+      post({ op: 'score', player, run, name: 'Jo2', difficulty: 'standard', minutes: 90, score: 8000 }); // resubmit: same row
+      post({ op: 'score', player: 'aaaaaaaaaa', run: 'bbbbbbbbbb', name: 'Mara', difficulty: 'standard', minutes: 80, score: 8000 });
+      post({ op: 'score', player: 'cccccccccc', run: 'dddddddddd', name: 'Tim', difficulty: 'standard', minutes: 70, score: 7000 });
+      post({ op: 'score', player: 'eeeeeeeeee', run: 'ffffffffff', name: 'Race', difficulty: 'race', minutes: 60, score: 9999 });
+      const r = post({ op: 'scores', player, difficulty: 'standard' });
+      expect(r.scores.map((x: any) => x.name)).toEqual(['Mara', 'Jo2', 'Tim']);
+      expect(r.scores[1].mine).toBe(true);
+      expect(r.scores[0].mine).toBe(false);
+      expect(JSON.stringify(r)).not.toContain('aaaaaaaaaa');
+    });
   });
 });
