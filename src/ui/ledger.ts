@@ -1,11 +1,11 @@
 // Ledger: credits chip, ledger modal, and the money lines in build tooltips.
 // Reads the economy from the sim; the only thing it changes is the export switches.
 import './ledger.css';
-import { BUILDING } from '../sim/data/buildings';
-import { EXPORTABLE, FEED_IN, POWER_PRICE, PRICE, PRICE_CURVE, REFUND_GRACE, REFUND_LATE } from '../sim/data/economy';
+import { BUILDING, BUILDINGS } from '../sim/data/buildings';
+import { EXPORTABLE, FEED_IN, POWER_PRICE, PRICE, PRICE_CURVE, REFUND_GRACE, REFUND_LATE, STIPEND } from '../sim/data/economy';
 import { ITEMS } from '../sim/data/items';
 import { canAfford, costOf } from '../sim/actions';
-import { capexOf, costPerKCompute, keepLevel, liveByType, overdraftFloor, powerPrice, setSell, unitEcon, upkeepOf } from '../sim/economy';
+import { capexOf, costPerKCompute, keepLevel, liveByType, overdraftFloor, powerPrice, setSell, unitEcon, upkeepOf, upkeepPerMin as upkeepNow } from '../sim/economy';
 import { COST_LINES, INCOME_LINES, timeOfDay } from '../sim/state';
 import type { CostLine, GameState, IncomeLine } from '../sim/state';
 import type { BuildingDef, ItemId } from '../sim/types';
@@ -119,7 +119,7 @@ export class Ledger {
   chipHtml(s: GameState): string {
     const r = this.rates(s);
     const c = s.econ.credits;
-    return `<div class="res clickable credchip${c < 0 ? ' debt' : ''}" data-tipk="credits">${coinIcon(22)}<div><span class="v">${fmt(c)}</span><span class="r">${r ? sign(r.net) + '/min' : '…'}</span></div></div>`;
+    return `<div class="res clickable credchip${c < 0 ? ' debt' : ''}" data-tipk="credits">${coinIcon(22)}<div><span class="v">${fmt(c)}</span><span class="r">${r ? sign(r.net) : '≈' + sign(STIPEND * 60 - upkeepNow(s))}/min</span></div></div>`;
   }
 
   tipHtml(s: GameState): string {
@@ -129,6 +129,9 @@ export class Ledger {
     if (r) {
       const top = (o: Record<string, number>, names: Record<string, string>) => Object.entries(o).filter(([, v]) => v > 0.05).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, v]) => `<span>${names[k]}</span><b>${fmt(v)}/min</b>`).join('');
       h += `<div class="tt"><span>Income</span><b class="g">${sign(r.inc)}/min</b>${top(r.income, INCOME_NAME)}<span>Costs</span><b class="r">−${fmt(r.cost)}/min</b>${top(r.costs, COST_NAME)}</div>`;
+    } else {
+      // no history yet (e.g. paused at the start): show what is known without running
+      h += `<div class="tt"><span>Core stipend</span><b class="g">+${fmt(STIPEND * 60)}/min</b><span>Upkeep of your buildings</span><b class="r">−${fmt(upkeepNow(s))}/min</b><span>Exports, power, contracts</span><b>once time runs</b></div>`;
     }
     if (e.credits < 0) h += `<span class="r">In debt: you cannot build, and debt costs 3% per minute. Below ${cr(overdraftFloor(s))} the colony council steps in (this era's score drops).</span><br>`;
     return h + `<span class="dim">Click or press K for the ledger.</span>`;
@@ -169,7 +172,9 @@ export class Ledger {
     }).join('');
 
     // exports
-    const exp = EXPORTABLE.map((it) => {
+    // only items this era can make (or that are already in stock)
+    const era = s.mode === 'sandbox' ? 5 : s.era;
+    const exp = EXPORTABLE.filter((it) => (s.stock[it] ?? 0) > 0 || BUILDINGS.some((d) => d.era <= era && d.outputs?.[it])).map((it) => {
       const on = !!e.sell[it];
       const keep = keepLevel(s, it);
       return `<button class="lexp${on ? ' on' : ''}" data-sell="${it}" data-tip="<b>${ITEMS[it].name}</b> sells at ${cr(PRICE[it] ?? 0)} each.<br>${on ? `Selling everything above ${keep} (enough to build anything this era). Click to hold.` : 'Holding all of it. Click to sell the surplus.'}">${itemIcon(it, 16)} ${ITEMS[it].name} ${cr(PRICE[it] ?? 0)} · ${on ? `SELL above ${keep}` : 'HOLD all'} <span class="dim">(${fmt(s.stock[it] ?? 0)})</span></button>`;
@@ -177,7 +182,7 @@ export class Ledger {
     const idleAccel = !e.sell.accel && (s.stock.accel ?? 0) > keepLevel(s, 'accel') * 2 ? `<div class="am" style="margin-top:6px">You hold ${fmt(s.stock.accel ?? 0)} accelerators worth ${cr((s.stock.accel ?? 0) * (PRICE.accel ?? 0))}. Selling some is an option if cash is short.</div>` : '';
 
     return `<div class="mcard panel ledger"><h1>LEDGER</h1><div class="lede">Credits pay for construction (capex) and running costs (opex). Rates are per minute over the last ${Math.round(r?.span ?? WINDOW) >= 60 ? Math.round((r?.span ?? WINDOW) / 60) + ' minutes' : 'few seconds'}. Payback = capex ÷ (value − running cost) at today’s utilisation and average power price.</div>
-      <div class="lkpis">${kpi('BALANCE', cr(e.credits), e.credits < 0 ? 'r' : '')}${kpi('NET / MIN', r ? sign(r.net) : '…', r && r.net < 0 ? 'r' : 'g')}${kpi('COST / 1K COMPUTE', cpk !== null ? cr(cpk) : '—', '', 'Running cost of compute and cooling buildings per 1,000 compute they produce.')}${kpi('UTILISATION', util !== null ? Math.round(util * 100) + '%' : '—', util !== null && util < 0.7 ? 'am' : '', 'Share of produced compute that reaches a workload. Idle compute still costs power and upkeep.')}<div class="lkpi spark"><div class="l">BALANCE, ${Math.round(Math.min(HISTORY, this.snaps.length ? s.time - this.snaps[0].t : 0) / 60)} MIN</div>${this.spark()}</div></div>
+      <div class="lkpis">${kpi('BALANCE', cr(e.credits), e.credits < 0 ? 'r' : '')}${kpi('NET / MIN', r ? sign(r.net) : '…', r && r.net < 0 ? 'r' : 'g')}${kpi('COST / 1K COMPUTE', cpk !== null ? cr(cpk) : '—', '', 'Running cost of compute and cooling buildings per 1,000 compute they produce.')}${kpi('UTILISATION', util !== null ? Math.round(util * 100) + '%' : '—', util !== null && util < 0.7 ? 'am' : '', 'Share of produced compute that reaches a workload. Idle compute still costs power and upkeep.')}<div class="lkpi spark"><div class="l">BALANCE${(() => { const m = Math.round(Math.min(HISTORY, this.snaps.length ? s.time - this.snaps[0].t : 0) / 60); return m >= 1 ? `, LAST ${m} MIN` : ' TREND'; })()}</div>${this.spark()}</div></div>
       <div class="lgrid"><div><h3 class="g">INCOME ${r ? sign(r.inc) + ' / min' : ''}</h3>${r ? bars(incRows, 'g') + lumpy : '<div class="dim">Measuring…</div>'}</div>
       <div><h3 class="r">COSTS ${r ? '−' + fmt(r.cost) + ' / min' : ''}</h3>${r ? bars(costRows, 'r') : '<div class="dim">Measuring…</div>'}</div>
       <div><h3 style="color:#ffe066">POWER PRICE TODAY</h3>${this.priceStrip(s)}<div class="dim" style="font-size:13px">Now ${cr(powerPrice(s) * 60)} per power-minute (average ${cr(POWER_PRICE * 60)}). Surplus sells for ${Math.round(FEED_IN * 100)}% of the price. Batteries let you buy cheap and use it at the peak.</div></div></div>

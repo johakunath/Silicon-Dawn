@@ -6,6 +6,7 @@ Newest first. Each entry says what a player notices. Technical detail lives in t
 - Colony economy: buildings cost credits as well as materials, and every minute costs upkeep, power bought through the Core (cheap at noon, expensive at dusk), gas fuel and water. Credits come from exports of surplus metal, silicon and chips, contracts, power sold, a funding round at each new era and a small Core stipend. Deep debt triggers an emergency grant that lowers the era score, so you can never get stuck broke.
 - Ledger (`K`, or click the credits chip): income and costs per minute, balance trend, power price over the day, cost per 1,000 compute, utilisation, payback for every building type, and SELL/HOLD switches for exports.
 - Build tooltips show capex, running cost and payback (or cost per compute). New Codex chapter "Unit economics".
+- Tutorial: two new steps explain credits, selling and the ledger (15 steps now).
 - Demolishing refunds all credits for 2 minutes, then half (materials are still refunded in full).
 - Belts out of the stockpile now stop at a build reserve sized to the era, so a busy base can always afford its next building.
 - Saves move to version 3; older saves open with a balance sized to the era they reached.
